@@ -2,10 +2,24 @@ from enum import Enum
 import cv2
 from shapely import Polygon, transform
 import numpy as np 
-import os 
+import os, json
 import matplotlib.pyplot as plt
 
 class PuzzleType(Enum):
+    """
+    Type 0:
+    - given an image, we create squared pieces 
+    Type 0R:
+    - same as Type 0 but with rotation
+    Type 1:
+    - given an image, we create polyomino pieces
+    Type 1R:
+    - same as Type 1 but with rotation
+    Type 2: 
+    - given an image or a set of fragments, we create irregular fragments
+    Type 2R:
+    - same as Type 2 but with rotation
+    """
     type0 = 'type0'
     type0r = 'type0R'
     type1 = 'type1'
@@ -59,17 +73,28 @@ class Puzzle:
         self.masks = []
         self.polygons = []
         self.input_data = {}
+        self.gt = {}
+        self.xs = []
+        self.ys = []
+        self.thetas = []
+        self.positions = []
+        self.puzzle_info = {}
 
     def load_input_data(self):
         """ Loads the data and handles the different use-cases. """
+
+
         if self.input_path.endswith('json'):
             print("Got the json dictionary with the data, loading from there..")
             import json 
             with open (self.input_path, 'r') as jf:
                 input_dict = json.load(jf)
             
+            self.gt['adjacency'] = input_dict['adjacency']
+            
             fragments = input_dict['fragments']
             print(f"found {len(fragments)} fragments")
+            self.puzzle_info['num_pieces'] = len(fragments)
             for fragment in fragments:
                 fragment_path = os.path.join(os.path.dirname(os.path.join(self.input_path)), fragment['filename'].replace('obj', 'png'))
                 raw_image = plt.imread(fragment_path)
@@ -84,8 +109,23 @@ class Puzzle:
                     'mask': mask,
                     'polygon': polygon
                 }
-            self.show_piece(3)
-            breakpoint()
+                self.gt[frag_name] = {
+                    'idx': fragment['idx'],
+                    'x': fragment['position'][0],
+                    'y': fragment['position'][1],
+                    'theta': fragment['position'][2]
+                }
+                self.xs.append(fragment['position'][0])
+                self.ys.append(fragment['position'][1])
+                self.thetas.append(fragment['position'][2])
+                self.positions.append(fragment['position'])
+
+            self.puzzle_info['pieces_image_size'] = self.images[0].shape
+            self.puzzle_info['binary_masks_available'] = True
+            self.puzzle_info['polygons_available'] = True
+            self.puzzle_info['ground_truth_available'] = True
+            # self.show_piece(3)
+            # breakpoint()
 
     def preprocess_irregular_piece(self, raw_image):
         bmask = extract_binary_mask(raw_image)
@@ -124,7 +164,7 @@ class Puzzle:
 
         return cen_image, cen_bmask, cen_polygon 
 
-    def save_pieces(self):
+    def save(self):
         output_dir = os.path.join(self.output_path, os.path.basename(os.path.dirname(os.path.join(self.input_path))))
         os.makedirs(output_dir, exist_ok=True)
         images_out_dir = os.path.join(output_dir, 'images')
@@ -133,10 +173,20 @@ class Puzzle:
         os.makedirs(bmasks_out_dir, exist_ok=True)        
         polygons_out_dir = os.path.join(output_dir, 'polygons')
         os.makedirs(polygons_out_dir, exist_ok=True)
-        for name, image, bmask, polygon in zip(self.names, self.images, self.masks, self.polygons):
-            plt.imsave(os.path.join(images_out_dir, f"{name}.png"), image)
-            plt.imsave(os.path.join(bmasks_out_dir, f"{name}.png"), bmask)
-            np.save(os.path.join(polygons_out_dir, f"{name}.png"), polygon)
+        for frag_key in self.input_data.keys():
+            frag_gt = self.gt[frag_key]
+            frag_data = self.input_data[frag_key]
+
+            # for name, image, bmask, polygon in zip(self.names, self.images, self.masks, self.polygons):
+            plt.imsave(os.path.join(images_out_dir, f"{frag_gt['idx']}_{frag_key}.png"), frag_data['image'])
+            plt.imsave(os.path.join(bmasks_out_dir, f"{frag_gt['idx']}_{frag_key}.png"), frag_data['mask'])
+            np.save(os.path.join(polygons_out_dir, f"{frag_gt['idx']}_{frag_key}.png"), frag_data['polygon'])
+        
+        np.savetxt(os.path.join(output_dir, "ground_truth.txt"), np.asarray(self.positions))
+        with open(os.path.join(output_dir, "ground_truth.json"), 'w') as jf:
+            json.dump(self.gt, jf, indent=2)
+        with open(os.path.join(output_dir, "puzzle_info.json"), 'w') as jf:
+            json.dump(self.puzzle_info, jf, indent=2)
 
         print("Done!")
 

@@ -25,7 +25,7 @@ def main(args):
     puzzle = Puzzle(args.input, args.puzzle_type, args.output)
     puzzle.load_input_data()
     # puzzle.create_pieces()
-    puzzle.save_pieces()
+    puzzle.save()
     
     return 1
 
