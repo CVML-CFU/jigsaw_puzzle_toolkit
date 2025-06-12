@@ -31,11 +31,13 @@ class PuzzleType(Enum):
         return self.value
 
 # @staticmethod
-def extract_binary_mask(irregular_image: np.ndarray, background: int = 0):
+def extract_binary_mask(irregular_image: np.ndarray, background: int = 0, close: bool = True):
     if irregular_image.shape[2] == 4:
         binary_mask = 1 - (irregular_image[:,:,3] == background).astype(np.uint8)
     else:
         binary_mask = 1 - (irregular_image[:,:,0] == background).astype(np.uint8)
+    if close == True:
+        binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, np.ones_like((5,5)))
     return binary_mask
 
 # @staticmethod
@@ -51,7 +53,8 @@ def extract_polygon(binary_mask: np.ndarray, return_max_dist_from_center: bool =
     bin_img = binary_mask.copy()
     bin_img = cv2.dilate(bin_img.astype(np.uint8), np.ones((2,2)), iterations=1)
     contours, _ = cv2.findContours(bin_img.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    contour_points = contours[0]
+    contour_points = contours[-1]
+    # breakpoint()
     # should we remove 0.5 or it's just visualization?
     #shapely_points = [(point[0][0]-0.5, point[0][1]-0.5) for point in contour_points]  # Shapely expects points in the format (x, y)
     shapely_points = [(point[0][0]-0.5, point[0][1]-0.5) for point in contour_points]  # Shapely expects points in the format (x, y)
@@ -102,7 +105,7 @@ class Puzzle:
         self.max_dist_from_center = 0
         self.padding = padding
 
-    def load_input_data(self, crop_pieces: bool = False):
+    def load_input_data(self, crop_pieces: bool = False, new_size: int = 0):
         """ Loads the data and handles the different use-cases. """
 
 
@@ -113,12 +116,13 @@ class Puzzle:
                 input_dict = json.load(jf)
             
             self.gt['adjacency'] = input_dict['adjacency']
+            self.gt['pieces'] = {}
             
             fragments = input_dict['fragments']
             print(f"found {len(fragments)} fragments")
             self.puzzle_info['num_pieces'] = len(fragments)
             print("loading..")
-            for fragment in fragments:
+            for j, fragment in enumerate(fragments):
                 fragment_path = os.path.join(os.path.dirname(os.path.join(self.input_path)), fragment['filename'].replace('obj', 'png'))
                 raw_image = plt.imread(fragment_path)
                 frag_name = fragment['filename'].split('.')[0]
@@ -131,12 +135,15 @@ class Puzzle:
                 if dist_from_center > self.max_dist_from_center:
                     self.max_dist_from_center = dist_from_center
                 self.input_data[frag_name] = {
+                    'idx': fragment['idx'],
+                    'name': frag_name,
                     'image': image,
                     'mask': mask,
                     'polygon': polygon
                 }
-                self.gt[frag_name] = {
+                self.gt['pieces'][j] = {
                     'idx': fragment['idx'],
+                    'name': frag_name,
                     'x': fragment['position'][0],
                     'y': fragment['position'][1],
                     'theta': fragment['position'][2]
@@ -160,25 +167,39 @@ class Puzzle:
                 center_pix = np.round(self.puzzle_info['pieces_image_size'][0] / 2).astype(int)
                 range_crop = self.padding + np.round(self.max_dist_from_center).astype(int)
                 polygon_translation = center_pix - range_crop
+                
+
                 for frag_key in self.input_data.keys():
+
                     orig_image_shape = self.input_data[frag_key]['image'].shape
-                    self.input_data[frag_key]['image'] = self.input_data[frag_key]['image'][center_pix-range_crop:center_pix+range_crop, center_pix-range_crop:center_pix+range_crop]
-                    self.input_data[frag_key]['mask'] = self.input_data[frag_key]['mask'][center_pix-range_crop:center_pix+range_crop, center_pix-range_crop:center_pix+range_crop]
-                    self.input_data[frag_key]['polygon'] = transform(self.input_data[frag_key]['polygon'], lambda f: f - [+polygon_translation,+polygon_translation])
+                    cropped_image = self.input_data[frag_key]['image'][center_pix-range_crop:center_pix+range_crop, center_pix-range_crop:center_pix+range_crop]
+                    cropped_mask = self.input_data[frag_key]['mask'][center_pix-range_crop:center_pix+range_crop, center_pix-range_crop:center_pix+range_crop]
+                    cropped_polygon = transform(self.input_data[frag_key]['polygon'], lambda f: f - [+polygon_translation,+polygon_translation])
+
+                    if new_size > 0:
+                        from skimage.transform import resize 
+                        cropped_image_size = cropped_image.shape[0]
+                        cropped_image = resize(cropped_image, (new_size, new_size), anti_aliasing=True)
+                        cropped_mask = (resize(cropped_mask, (new_size, new_size), anti_aliasing=True, preserve_range=True) > 0.5).astype(np.uint8)
+                        cropped_polygon = transform(cropped_polygon, lambda f: f * new_size / cropped_image_size)
+
+                    self.input_data[frag_key]['image'] = cropped_image
+                    self.input_data[frag_key]['mask'] = cropped_mask
+                    self.input_data[frag_key]['polygon'] = cropped_polygon
+                
+                    # plt.suptitle(f"After resizing to {new_size}", fontsize=24)
+                    # plt.subplot(121)
+                    # plt.title("Image")
+                    # plt.imshow(self.input_data[frag_key]['image'])
+                    # plt.scatter(self.input_data[frag_key]['image'].shape[0] / 2, self.input_data[frag_key]['image'].shape[1] / 2, s=15)
+                    # plt.plot(*(self.input_data[frag_key]['polygon'].boundary.xy), linewidth=3)
                     
-                    plt.suptitle(f"Piece: {frag_key}\nPieces image size: {orig_image_shape} --> {self.puzzle_info['pieces_image_size']}\nFrag max size: {self.max_dist_from_center*2}", fontsize=24)
-                    plt.subplot(121)
-                    plt.title("Image")
-                    plt.imshow(self.input_data[frag_key]['image'])
-                    plt.scatter(self.input_data[frag_key]['image'].shape[0] / 2, self.input_data[frag_key]['image'].shape[1] / 2, s=15)
-                    plt.plot(*(self.input_data[frag_key]['polygon'].boundary.xy), linewidth=3)
-                    
-                    plt.subplot(122)
-                    plt.title("Binary Mask")
-                    plt.imshow(self.input_data[frag_key]['mask'])
-                    plt.plot(*(self.input_data[frag_key]['polygon'].boundary.xy), linewidth=3)
-                    plt.show()
-                    breakpoint()
+                    # plt.subplot(122)
+                    # plt.title("Binary Mask")
+                    # plt.imshow(self.input_data[frag_key]['mask'])
+                    # plt.plot(*(self.input_data[frag_key]['polygon'].boundary.xy), linewidth=3)
+                    # plt.show()
+                    # breakpoint()
 
     def preprocess_irregular_piece(self, raw_image):
         bmask = extract_binary_mask(raw_image)
@@ -228,13 +249,12 @@ class Puzzle:
         polygons_out_dir = os.path.join(self.output_dir, 'polygons')
         os.makedirs(polygons_out_dir, exist_ok=True)
         for frag_key in self.input_data.keys():
-            frag_gt = self.gt[frag_key]
             frag_data = self.input_data[frag_key]
 
             # for name, image, bmask, polygon in zip(self.names, self.images, self.masks, self.polygons):
-            plt.imsave(os.path.join(images_out_dir, f"{frag_gt['idx']}_{frag_key}.png"), frag_data['image'])
-            plt.imsave(os.path.join(bmasks_out_dir, f"{frag_gt['idx']}_{frag_key}.png"), frag_data['mask'])
-            np.save(os.path.join(polygons_out_dir, f"{frag_gt['idx']}_{frag_key}.png"), frag_data['polygon'])
+            plt.imsave(os.path.join(images_out_dir, f"{frag_data['idx']}_{frag_data['name']}.png"), frag_data['image'])
+            cv2.imwrite(os.path.join(bmasks_out_dir, f"{frag_data['idx']}_{frag_data['name']}.png"), frag_data['mask'])
+            np.save(os.path.join(polygons_out_dir, f"{frag_data['idx']}_{frag_data['name']}"), frag_data['polygon'])
         
         np.savetxt(os.path.join(self.output_dir, "ground_truth.txt"), np.asarray(self.positions))
         with open(os.path.join(self.output_dir, "ground_truth.json"), 'w') as jf:
@@ -257,6 +277,6 @@ class Puzzle:
         plt.plot(*(self.polygons[index].boundary.xy), linewidth=3)
         plt.show()
 
-    def create_pieces(self):
-        # puzzle_data, pieces, solution = 
-        return 1,1,1
+    # def create_pieces(self):
+    #     # puzzle_data, pieces, solution = 
+    #     return 1,1,1

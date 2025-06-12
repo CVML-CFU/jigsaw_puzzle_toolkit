@@ -34,12 +34,13 @@ def main(args):
             print("creating puzzle", os.path.basename(puzzle_name))
             puzzle_data_file = os.path.join(args.input_root, puzzle_name, 'data.json')
             puzzle = Puzzle(puzzle_data_file, args.puzzle_type, args.output_root)
-            puzzle.load_input_data(crop_pieces=True)
+            puzzle.load_input_data(crop_pieces=True, new_size=args.new_size)
             puzzle.save()
             # copy preview
             shutil.copy2(os.path.join(args.input_root, puzzle_name, 'adjacency_preview.png'), os.path.join(puzzle.output_dir, 'adjacency_preview.png'))
             shutil.copy2(os.path.join(args.input_root, puzzle_name, 'preview.png'), os.path.join(puzzle.output_dir, 'preview.png'))
             breakpoint()
+            print('done\n')
         
     return 1
 
@@ -49,6 +50,7 @@ if __name__ == '__main__':
     parser.add_argument('--input_root', '-I', type=str, default='input', help='path to dataset root folder (contains multiple folders, the puzzles)')
     parser.add_argument('--puzzle_type', '-PT', type=PuzzleType, choices=list(PuzzleType), help='puzzle type')
     parser.add_argument('--output_root', '-O', type=str, default='output', help='path to the output where the puzzle files will be placed')
+    parser.add_argument('--new_size', '-S', type=int, default=251, help='new size for rescaling')
 
     args = parser.parse_args()
     main(args)
