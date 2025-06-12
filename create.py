@@ -23,7 +23,7 @@ from puzzle import PuzzleType, Puzzle
 def main(args):
     
     puzzle = Puzzle(args.input, args.puzzle_type, args.output)
-    puzzle.load_input_data()
+    puzzle.load_input_data(crop_pieces=True)
     # puzzle.create_pieces()
     puzzle.save()
     
