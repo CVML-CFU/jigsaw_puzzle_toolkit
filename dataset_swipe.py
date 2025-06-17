@@ -30,7 +30,7 @@ def main(args):
         target_folder = os.path.join(args.output_root, puzzle_name)
         if os.path.exists(target_folder):
             print(f"puzzle {os.path.basename(target_folder)} already exists!")
-        else:
+        else: 
             print("creating puzzle", os.path.basename(puzzle_name))
             puzzle_data_file = os.path.join(args.input_root, puzzle_name, 'data.json')
             puzzle = Puzzle(puzzle_data_file, args.puzzle_type, args.output_root)
@@ -39,7 +39,7 @@ def main(args):
             # copy preview
             shutil.copy2(os.path.join(args.input_root, puzzle_name, 'adjacency_preview.png'), os.path.join(puzzle.output_dir, 'adjacency_preview.png'))
             shutil.copy2(os.path.join(args.input_root, puzzle_name, 'preview.png'), os.path.join(puzzle.output_dir, 'preview.png'))
-            breakpoint()
+            # breakpoint()
             print('done\n')
         
     return 1
