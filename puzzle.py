@@ -37,7 +37,7 @@ def extract_binary_mask(irregular_image: np.ndarray, background: int = 0, close:
     else:
         binary_mask = 1 - (irregular_image[:,:,0] == background).astype(np.uint8)
     if close == True:
-        binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, np.ones_like((9,9)))
+        binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, np.ones_like((5,5)))
     return binary_mask
 
 # @staticmethod
@@ -136,6 +136,8 @@ class Puzzle:
             print("loading the pieces..")
             self.raw_images = []
             self.extended_raw_images = []
+            self.extended_raw_masks = []
+            self.extended_raw_polygons = []
             self.raw_masks = []
             self.raw_polygons = []
             for j, fragment in enumerate(fragments):
@@ -147,13 +149,15 @@ class Puzzle:
                 self.gt['pieces'][j] = {
                     'idx': fragment['idx'],
                     'name': frag_name,
-                    'x': fragment['position'][0], # + shift[0],
-                    'y': -fragment['position'][1], # - shift[1],
-                    'theta': fragment['position'][2]
+                    'x': fragment['pixel_position'][0], # + shift[0],
+                    'y': -fragment['pixel_position'][1], # - shift[1],
+                    'theta': fragment['pixel_position'][2]
                 }
                 raw_mask, raw_polygon, enclosing_radius, wh = self.extract_mask_and_polygon_irregular_piece(raw_image)
                 self.raw_masks.append(raw_mask)
+                self.extended_raw_masks.append(raw_mask)
                 self.raw_polygons.append(raw_polygon)
+                self.extended_raw_polygons.append(raw_polygon)
                 self.sizes.append(wh)
                 self.radii.append(enclosing_radius)
                 if enclosing_radius > self.max_enclosing_radius:
@@ -164,28 +168,47 @@ class Puzzle:
                 
                 frag_name = fragment['filename'].split('.')[0]
                 print(f"fragment {frag_name}")
-                self.extended_raw_images[j] = cv2.copyMakeBorder(self.raw_images[j], self.padding, self.padding, self.padding, self.padding, cv2.BORDER_REPLICATE)
+                self.extended_raw_images[j] = cv2.copyMakeBorder(self.raw_images[j], self.padding, self.padding, self.padding, self.padding, cv2.BORDER_CONSTANT, (0, 0, 0, 0))
                 # np.zeros((self.raw_images[j].shape[0] + self.padding, self.raw_images[j].shape[1] + self.padding, self.raw_images[j].shape[2]))
-                self.raw_masks[j] = cv2.copyMakeBorder(self.raw_masks[j], self.padding, self.padding, self.padding, self.padding, cv2.BORDER_REPLICATE)
+                self.extended_raw_masks[j] = cv2.copyMakeBorder(self.raw_masks[j], self.padding, self.padding, self.padding, self.padding, cv2.BORDER_CONSTANT, (0))
                 #np.zeros((self.raw_masks[j].shape[0] + self.padding, self.raw_masks[j].shape[1] + self.padding))
-                self.raw_polygons[j] = transform(self.raw_polygons[j], lambda f: f + [self.padding, self.padding])
+                self.extended_raw_polygons[j] = transform(self.raw_polygons[j], lambda f: f + [self.padding, self.padding])
 
+                pixel_position = np.asarray(fragment['pixel_position'][:2]) + np.asarray([self.padding, self.padding])
                 # this is the pixel position of the center of mass of the fragment (so we can process it and maintain the GT)
-                pixel_position = np.asarray([self.raw_images[j].shape[0] / 2 + fragment['position'][0] / self.gt['transform'][0][0],# - self.gt['transform'][0][3],
-                                             self.raw_images[j].shape[1] / 2 - fragment['position'][1] / self.gt['transform'][1][1]])# + self.gt['transform'][1][3]])
-                
-                plt.subplot(121)
-                plt.imshow(self.raw_images[j])
-                plt.scatter(pixel_position[0], pixel_position[1], s=25, c='red')
-                
-                plt.subplot(122)
-                plt.imshow(self.extended_raw_images[j])
-                plt.scatter(pixel_position[0]+1000, pixel_position[1]+1000, s=25, c='red')
-                plt.show()
+                # pixel_position = np.asarray([self.gt['pieces'][j]
+                # pnts_hom = np.hstack((np.asarray(pnts), np.ones((np.asarray(pnts).shape[0], 1)))) # transform position points to homogeneous
+                # pixels = (inv_tform @ pnts_hom.T).T[:,0:2]
 
-                breakpoint()
+                # print(f"pixels: {pixels}, pixel_position: {fragment['pixel_position']}")
+
+                # plt.subplot(121)
+                # plt.imshow(self.extended_raw_images[j])
+                # plt.scatter(pixel_position[0], pixel_position[1], s=25, c='red')
+                # plt.plot(*self.extended_raw_polygons[j].boundary.xy)
+                
+                # plt.subplot(122)
+                # plt.imshow(self.extended_raw_masks[j])
+                # plt.scatter(pixel_position[0], pixel_position[1], s=25, c='red')
+                # plt.plot(*self.extended_raw_polygons[j].boundary.xy)
+                # plt.show()
+                # breakpoint()
+                
                 self.names.append(frag_name)
-                image, mask, polygon = self.extract_everything_centered_at(piece_index=j, center=pixel_position, half_image_side=self.max_enclosing_radius, new_size=new_size)
+                image, mask, polygon, rescaling_factor = self.extract_everything_centered_at(piece_index=j, center=pixel_position, half_image_side=self.max_enclosing_radius, new_size=new_size)
+                
+                # plt.subplot(121)
+                # plt.imshow(image)
+                # # plt.scatter(pixel_position[0], pixel_position[1], s=25, c='red')
+                # plt.plot(*polygon.boundary.xy)
+                
+                # plt.subplot(122)
+                # plt.imshow(mask)
+                # # plt.scatter(pixel_position[0]+1000, pixel_position[1]+1000, s=25, c='red')
+                # plt.plot(*polygon.boundary.xy)
+                # plt.show()
+                # breakpoint()
+
                 self.images.append(image)
                 self.masks.append(mask)
                 self.polygons.append(polygon)                
@@ -196,6 +219,9 @@ class Puzzle:
                     'mask': mask,
                     'polygon': polygon
                 }
+
+                self.gt['pieces'][j]['x'] = self.gt['pieces'][j]['x'] / rescaling_factor
+                self.gt['pieces'][j]['y'] = image.shape[1] - self.gt['pieces'][j]['y'] / rescaling_factor
                 
                 self.xs.append(fragment['position'][0])
                 self.ys.append(fragment['position'][1])
@@ -257,6 +283,7 @@ class Puzzle:
     def extract_everything_centered_at(self, piece_index:int, center:np.ndarray, half_image_side:float, new_size:int = 0):
         """ extract all the information from the given center of mass """
 
+        # breakpoint()
         # int_square_size = np.ceil(square_size + padding).astype(int)
         # if int_square_size % 2 == 1:
         #     int_square_size += 1
@@ -265,18 +292,31 @@ class Puzzle:
 
         # breakpoint()
         # plt.suptitle(f"Before", fontsize=24)
-        plt.subplot(231)
-        plt.title("Before")
-        plt.imshow(self.raw_images[piece_index])
-        plt.scatter(center[0], center[1], s=15, c='red')
-        plt.scatter(self.raw_images[piece_index].shape[0] / 2, self.raw_images[piece_index].shape[1] / 2, s=15)
-        plt.plot(*(self.raw_polygons[piece_index].boundary.xy), linewidth=3)
+        # plt.subplot(421)
+        # plt.title("Before")
+        # plt.imshow(self.raw_images[piece_index])
+        # plt.scatter(center[0], center[1], s=15, c='red')
+        # plt.scatter(self.raw_images[piece_index].shape[0] / 2, self.raw_images[piece_index].shape[1] / 2, s=15)
+        # plt.plot(*(self.raw_polygons[piece_index].boundary.xy), linewidth=3)
         
-        plt.subplot(234)
-        plt.imshow(self.raw_masks[piece_index])
-        plt.scatter(center[0], center[1], s=15, c='red')
-        plt.scatter(self.raw_masks[piece_index].shape[0] / 2, self.raw_masks[piece_index].shape[1] / 2, s=15)
-        plt.plot(*(self.raw_polygons[piece_index].boundary.xy), linewidth=3)
+        # plt.subplot(422)
+        # plt.imshow(self.raw_masks[piece_index])
+        # plt.scatter(center[0], center[1], s=15, c='red')
+        # plt.scatter(self.raw_masks[piece_index].shape[0] / 2, self.raw_masks[piece_index].shape[1] / 2, s=15)
+        # plt.plot(*(self.raw_polygons[piece_index].boundary.xy), linewidth=3)
+
+        # plt.subplot(423)
+        # plt.title("Before")
+        # plt.imshow(self.extended_raw_images[piece_index])
+        # plt.scatter(center[0], center[1], s=15, c='red')
+        # plt.scatter(self.extended_raw_images[piece_index].shape[0] / 2, self.raw_images[piece_index].shape[1] / 2, s=15)
+        # plt.plot(*(self.raw_polygons[piece_index].boundary.xy), linewidth=3)
+        
+        # plt.subplot(424)
+        # plt.imshow(self.extended_raw_masks[piece_index])
+        # plt.scatter(center[0], center[1], s=15, c='red')
+        # plt.scatter(self.extended_raw_masks[piece_index].shape[0] / 2, self.raw_masks[piece_index].shape[1] / 2, s=15)
+        # plt.plot(*(self.raw_polygons[piece_index].boundary.xy), linewidth=3)
 
 
         # cropped_image = self.raw_images[piece_index][center[1]-self.sizes[piece_index][1]//2: center[1]+self.sizes[piece_index][1]//2+1, center[0]-self.sizes[piece_index][0]//2: center[0]+self.sizes[piece_index][0]//2+1, :]
@@ -285,22 +325,22 @@ class Puzzle:
         # cropped_polygon = transform(self.raw_polygons[piece_index], lambda f: f - polygon_translation)
 
         # breakpoint()
-        cropped_image = self.raw_images[piece_index][center[1]-half_image_side: center[1]+half_image_side+1, center[0]-half_image_side: center[0]+half_image_side+1, :]
-        cropped_mask = self.raw_masks[piece_index][center[1]-half_image_side: center[1]+half_image_side+1, center[0]-half_image_side: center[0]+half_image_side+1]
+        cropped_image = self.extended_raw_images[piece_index][center[1]-half_image_side: center[1]+half_image_side+1, center[0]-half_image_side: center[0]+half_image_side+1, :]
+        cropped_mask = self.extended_raw_masks[piece_index][center[1]-half_image_side: center[1]+half_image_side+1, center[0]-half_image_side: center[0]+half_image_side+1]
         polygon_translation = center - np.asarray([half_image_side, half_image_side])
-        cropped_polygon = transform(self.raw_polygons[piece_index], lambda f: f - polygon_translation)
+        cropped_polygon = transform(self.extended_raw_polygons[piece_index], lambda f: f - polygon_translation)
 
-        # # plt.suptitle(f"After cropping", fontsize=24)
-        plt.subplot(232)
-        plt.title(f"Crop (ihs:{half_image_side}, s:{cropped_image.shape}")
-        plt.imshow(cropped_image)
-        plt.scatter(cropped_image.shape[0] / 2, cropped_image.shape[1] / 2, s=15)
-        plt.plot(*(cropped_polygon.boundary.xy), linewidth=3)
+        # # # plt.suptitle(f"After cropping", fontsize=24)
+        # plt.subplot(425)
+        # plt.title(f"Crop (ihs:{half_image_side}, s:{cropped_image.shape}")
+        # plt.imshow(cropped_image)
+        # plt.scatter(cropped_image.shape[0] / 2, cropped_image.shape[1] / 2, s=15)
+        # plt.plot(*(cropped_polygon.boundary.xy), linewidth=3)
 
-        plt.subplot(235)
-        plt.imshow(cropped_mask)
-        plt.scatter(cropped_mask.shape[0] / 2, cropped_mask.shape[1] / 2, s=15)
-        plt.plot(*(cropped_polygon.boundary.xy), linewidth=3)
+        # plt.subplot(426)
+        # plt.imshow(cropped_mask)
+        # plt.scatter(cropped_mask.shape[0] / 2, cropped_mask.shape[1] / 2, s=15)
+        # plt.plot(*(cropped_polygon.boundary.xy), linewidth=3)
 
         if new_size > 0:
             from skimage.transform import resize 
@@ -310,21 +350,22 @@ class Puzzle:
             cropped_image = resize(cropped_image, (new_size, new_size), anti_aliasing=True)
             cropped_mask = (resize(cropped_mask, (new_size, new_size), anti_aliasing=True, preserve_range=True) > 0.5).astype(np.uint8)
             cropped_polygon = transform(cropped_polygon, lambda f: f * new_size / cropped_image_size)
-        
-        # # plt.suptitle(f"After resizing to {new_size}", fontsize=24)
-        plt.subplot(233)
-        plt.title("Resize")
-        plt.imshow(cropped_image)
-        plt.scatter(cropped_image.shape[0] / 2, cropped_image.shape[1] / 2, s=15)
-        plt.plot(*(cropped_polygon.boundary.xy), linewidth=3)
 
-        plt.subplot(236)
-        plt.imshow(cropped_mask)
-        plt.scatter(cropped_mask.shape[0] / 2, cropped_image.shape[1] / 2, s=15)
-        plt.plot(*(cropped_polygon.boundary.xy), linewidth=3)
-        plt.show()
-        breakpoint()
-        return cropped_image, cropped_mask, cropped_polygon
+
+        # # # plt.suptitle(f"After resizing to {new_size}", fontsize=24)
+        # plt.subplot(427)
+        # plt.title("Resize")
+        # plt.imshow(cropped_image)
+        # plt.scatter(cropped_image.shape[0] / 2, cropped_image.shape[1] / 2, s=15)
+        # plt.plot(*(cropped_polygon.boundary.xy), linewidth=3)
+
+        # plt.subplot(428)
+        # plt.imshow(cropped_mask)
+        # plt.scatter(cropped_mask.shape[0] / 2, cropped_image.shape[1] / 2, s=15)
+        # plt.plot(*(cropped_polygon.boundary.xy), linewidth=3)
+        # plt.show()
+        # breakpoint()
+        return cropped_image, cropped_mask, cropped_polygon, rescaling_factor
 
     def preprocess_and_center_irregular_piece(self, raw_image, method='np'):
         bmask = extract_binary_mask(raw_image)
