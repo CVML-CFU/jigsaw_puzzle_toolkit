@@ -16,24 +16,28 @@ Type 2R:
 - same as Type 2 but with rotation
 """
 
-import os 
+import os
+
 import argparse
 import shutil
 from puzzle import PuzzleType, Puzzle
 
 def main(args):
-    input_path = os.path.join(args.input, 'data.json')
+
+    #root_path = ('/run/user/1000/gvfs/sftp:host=gpu1.dsi.unive.it,user=m.khoroshiltseva/home/ssd/datasets/RePAIR_v2/3_Rendered_2D/SOLVED/puzzle_0000025_RP_group_24')
+
+    root_path = args.input
+    input_path = os.path.join(root_path, 'data.json')
     puzzle = Puzzle(input_path, args.puzzle_type, args.output)
     #puzzle = Puzzle(args.input, args.puzzle_type, args.output)
     puzzle.load_input_data(crop_pieces=True, new_size=args.new_size)
     # puzzle.create_pieces()
     puzzle.save()
     # copy preview
-    shutil.copy2(os.path.join(args.input, 'adjacency_preview.png'),
+    shutil.copy2(os.path.join(root_path, 'adjacency_preview.png'),
                  os.path.join(puzzle.output_dir, 'adjacency_preview.png'))
-    shutil.copy2(os.path.join(args.input, 'preview.png'),
+    shutil.copy2(os.path.join(root_path, 'preview.png'),
                  os.path.join(puzzle.output_dir, 'preview.png'))
-    
     return 1
 
 
