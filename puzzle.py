@@ -223,10 +223,10 @@ class Puzzle:
                 self.gt['pieces'][j]['x'] = self.gt['pieces'][j]['x'] / rescaling_factor
                 self.gt['pieces'][j]['y'] = image.shape[1] - self.gt['pieces'][j]['y'] / rescaling_factor
                 
-                self.xs.append(fragment['position'][0])
-                self.ys.append(fragment['position'][1])
-                self.thetas.append(fragment['position'][2])
-                self.positions.append(fragment['position'])
+                self.xs.append(fragment['pixel_position'][0])
+                self.ys.append(fragment['pixel_position'][1])
+                self.thetas.append(fragment['pixel_position'][2])
+                self.positions.append(fragment['pixel_position'])
 
             self.puzzle_info['pieces_image_size'] = self.images[0].shape
             self.puzzle_info['binary_masks_available'] = True
