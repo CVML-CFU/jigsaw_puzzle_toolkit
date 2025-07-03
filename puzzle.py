@@ -175,6 +175,13 @@ class Puzzle:
                 self.extended_raw_polygons[j] = transform(self.raw_polygons[j], lambda f: f + [self.padding, self.padding])
 
                 pixel_position = np.asarray(fragment['pixel_position'][:2]) + np.asarray([self.padding, self.padding])
+
+                ### temporal solution .... ONLY FOR RENDERING output FROM THEO !!! USE line 177 otherwise
+                # pixel_position = np.asarray(fragment['pixel_position'][:2])
+                # pixel_position[1] = self.raw_images[j].shape[1] - pixel_position[1]
+                # pixel_position += np.asarray([self.padding, self.padding])
+                #################################
+
                 # this is the pixel position of the center of mass of the fragment (so we can process it and maintain the GT)
                 # pixel_position = np.asarray([self.gt['pieces'][j]
                 # pnts_hom = np.hstack((np.asarray(pnts), np.ones((np.asarray(pnts).shape[0], 1)))) # transform position points to homogeneous
@@ -201,7 +208,7 @@ class Puzzle:
                 # plt.imshow(image)
                 # # plt.scatter(pixel_position[0], pixel_position[1], s=25, c='red')
                 # plt.plot(*polygon.boundary.xy)
-                
+                #
                 # plt.subplot(122)
                 # plt.imshow(mask)
                 # # plt.scatter(pixel_position[0]+1000, pixel_position[1]+1000, s=25, c='red')
