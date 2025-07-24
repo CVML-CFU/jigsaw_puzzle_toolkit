@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import math
 
 from PIL import Image
 
@@ -21,8 +22,13 @@ class Evaluation:
         results and ground_truth are two dictionary with the following keys:
             - normalized piece id (just the number)
             - a list corresponds to the piece id which gives the position in form of [x, y, theta]
-        path_lists is a dictionary with the normalized id and the path to the correspondign image (.png)
+        path_lists is a dictionary with the normalized id and the path to the corresponding image (.png)
         """
+
+        results_org = results.copy()
+        ground_truth_org = ground_truth.copy()
+
+        ground_truth, results = self.normalize_results_and_ground_truth(results, ground_truth)
 
         scores_df = pd.DataFrame(columns=['object_name', 'Q_pos', 'RMSE_rot', 'RMSE_translation'])
 
@@ -404,3 +410,48 @@ class Evaluation:
         new_image1.paste(image1, (0, 0))
         new_image2.paste(image2, (0, 0))
         return new_image1, new_image2
+
+    def normalize_results_and_ground_truth(self, results, ground_truth):
+        """
+        Normalize the results and ground truth dictionaries to first piece.
+        First piece is considered as the anchor piece and all other pieces are normalized toward it.
+        """
+        base_fragment = next(iter(results.keys()))
+        print(f"Base fragment: {base_fragment}")
+
+        for key in results.keys():
+            if key not in ground_truth:
+                raise ValueError(f"Key {key} in results is not in ground_truth")
+
+        # Normalize the results and ground truth to the first piece in the results (because ground truth could be more than test set)
+
+        gx, gy, g_theta = ground_truth[base_fragment]
+        rx, ry, r_theta = results[base_fragment]
+
+        gt = {pid: [x - gx, y - gy, theta] for pid, (x, y, theta) in ground_truth.items()}
+        res = {pid: [x - rx, y - ry, theta] for pid, (x, y, theta) in results.items()}
+
+        # Normalize angle to the first piece
+
+        d_theta = (g_theta - r_theta) % 360
+        if d_theta:
+            sin_t, cos_t = math.sin(math.radians(d_theta)), math.cos(math.radians(d_theta))
+            res_rot = {}
+            for pid, (x, y, theta) in res.items():
+                x2 = cos_t * x - sin_t * y
+                y2 = sin_t * x + cos_t * y
+                res_rot[pid] = [x2, y2, (theta + d_theta) % 360]
+            res = res_rot
+
+        # to avoid negative coordinates
+
+        min_x = min(p[0] for p in gt.values())
+        min_y = min(p[1] for p in gt.values())
+        dx = -min_x if min_x < 0 else 0.0
+        dy = -min_y if min_y < 0 else 0.0
+
+        gt = {pid: [x + dx, y + dy, theta] for pid, (x, y, theta) in gt.items()}
+        res = {pid: [x + dx, y + dy, theta] for pid, (x, y, theta) in res.items()}
+
+        return gt, res
+
