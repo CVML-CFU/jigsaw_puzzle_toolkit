@@ -111,7 +111,6 @@ class Evaluation:
         gt_transformations_df = self.read_transformations(pieces, ground_truth)
 
         # Initialize the shared canvas with the largest piece
-
         shared_canvas_width, shared_canvas_height = self.calculate_shared_canvas_size(pieces, transformations_df,
                                                                                  gt_transformations_df, path_lists)
 
@@ -423,6 +422,8 @@ class Evaluation:
             if key not in ground_truth:
                 raise ValueError(f"Key {key} in results is not in ground_truth")
 
+
+
         # Normalize the results and ground truth to the first piece in the results (because ground truth could be more than test set)
 
         gx, gy, g_theta = ground_truth[base_fragment]
@@ -452,6 +453,37 @@ class Evaluation:
 
         gt = {pid: [x + dx, y + dy, theta] for pid, (x, y, theta) in gt.items()}
         res = {pid: [x + dx, y + dy, theta] for pid, (x, y, theta) in res.items()}
+
+        # NOT EFFICIENT BUT READABLE
+        # could be improved
+        # if we have negative values, it can affect the evaluation 
+        # mostly it happens if the anchor has negative values
+        # so as a quick fix we 
+        # push all values to be positive
+        max_neg_val = 0
+        for gtk in gt.keys():
+            cur_max_neg_val = np.min(gt[gtk])
+            if cur_max_neg_val < max_neg_val:
+                max_neg_val = cur_max_neg_val 
+        for rsk in res.keys():
+            cur_max_neg_val = np.min(res[rsk])
+            if cur_max_neg_val < max_neg_val:
+                max_neg_val = cur_max_neg_val 
+            
+        # # print(f'Max Neg Val {max_neg_val}')
+        # for gtk in gt.keys(): print(gt[gtk])  
+        # for rsk in res.keys(): print(res[rsk])
+        # breakpoint()
+        # print("AFTER")
+        for gtk in gt.keys(): 
+            gt[gtk] = np.asarray(gt[gtk])
+            gt[gtk][:2] -= max_neg_val
+            # print(gt[gtk])
+        for rsk in res.keys():
+            res[rsk] = np.asarray(res[rsk]) 
+            res[rsk][:2] -= max_neg_val
+        #     print(res[rsk])
+        # breakpoint()
 
         return gt, res
 

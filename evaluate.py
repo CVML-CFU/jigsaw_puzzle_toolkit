@@ -7,7 +7,7 @@ import pandas as pd
 
 def main():
 
-    data_dir = ""
+    data_dir = "/run/user/1000/gvfs/sftp:host=gpu1.dsi.unive.it,user=luca.palmieri/home/ssd/datasets/RePAIR_ReLab_luca"
     test_set = np.loadtxt(os.path.join(data_dir, 'PAD_v2', 'test.txt'), dtype=str)
     experiments_folder = os.path.join(data_dir, 'experiments')
     preprocessing_folder = os.path.join(data_dir, 'preprocessing')
@@ -39,7 +39,7 @@ def main():
                 for j in range(solution.shape[0]):
                     pid = solution[j][0]
                     results[pid] = solution[j][1:4].astype(float)
-                    ground_truth[pid] = ground_truth_xyz[j]
+                    ground_truth[pid] = ground_truth_xyz[j] / 3.9
                     piece_path = os.path.join(preprocessing_folder, test_puzzle, 'images', f"{pid}.png")
                     path_lists[pid] = piece_path
 
@@ -76,7 +76,7 @@ def main():
                 CM_type_list.append(params['aggregation']['method'])
                 anchor_ids_list.append(anchor_idx)
                 evaluated_test_set.append(test_puzzle)
-    
+        
     eval_df = pd.DataFrame()
     eval_df['puzzle'] = evaluated_test_set
     eval_df['CM'] = CM_type_list
