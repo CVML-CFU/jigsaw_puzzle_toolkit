@@ -10,6 +10,7 @@ from datetime import datetime
 def main():
 
     data_dir = "/run/user/1000/gvfs/sftp:host=gpu1.dsi.unive.it,user=luca.palmieri/home/ssd/datasets/RePAIR_ReLab_luca"
+    #data_dir = "/run/user/1000/gvfs/sftp:host=gpu1.dsi.unive.it,user=m.khoroshiltseva/home/ssd/datasets/RePAIR_ReLab_marina/"
     test_set = np.loadtxt(os.path.join(data_dir, 'PAD_v2', 'test.txt'), dtype=str)
     experiments_folder = os.path.join(data_dir, 'experiments')
     preprocessing_folder = os.path.join(data_dir, 'preprocessing')
@@ -50,12 +51,10 @@ def main():
                         pieces = [piece_n[:-4] for piece_n in pieces_fn ]
                         for j in range(solution.shape[0]):
                             pid = solution[j][0]
-                            results[pid] = solution[j][1:4].astype(float)
+                            results[pid] = solution[j][0:3].astype(float)
                             ground_truth[pid] = ground_truth_xyz[j] / 3.9
                             piece_path = os.path.join(preprocessing_folder, test_puzzle, 'images', f"{pid}.png")
-                            path_lists[pid] = piece_path
-
-                        eval = Evaluation()
+                            path_lists[pid] = piece_path                        eval = Evaluation()
                         ## Evaluate
                         avg_q_pos, avg_rmse_rot, avg_rmse_translation = eval.evaluate(pieces, results, ground_truth, path_lists)
                         ## print stats
