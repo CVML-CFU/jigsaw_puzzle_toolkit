@@ -28,7 +28,10 @@ class Evaluation:
         results_org = results.copy()
         ground_truth_org = ground_truth.copy()
 
-        ground_truth, results = self.normalize_results_and_ground_truth(results, ground_truth)
+        largest_piece = self.find_largest_fragment(pieces, path_lists)
+        print(largest_piece)
+
+        ground_truth, results = self.normalize_results_and_ground_truth(results, ground_truth, largest_piece)
 
         scores_df = pd.DataFrame(columns=['object_name', 'Q_pos', 'RMSE_rot', 'RMSE_translation'])
 
@@ -132,11 +135,14 @@ class Evaluation:
                                                   largest_piece=additional_transformation['largest_piece_name'])
 
         q_pos = 0
+        total_area = 0
 
         image_canvases = {}
         gt_image_canvases = {}
 
         # Apply the transformations on all the pieces then place them on the shared canvas
+        solution_canvas_for_debug = Image.new('RGBA', (shared_canvas_width, shared_canvas_height), (0, 0, 0, 0))
+        gt_canvas_for_debug = Image.new('RGBA', (shared_canvas_width, shared_canvas_height), (0, 0, 0, 0))
         for index, row in transformations_non_negative.iterrows():
             piece_filename = row['rpf']
             x = int(row['x'])
@@ -151,14 +157,17 @@ class Evaluation:
             new_piece = self.apply_transformations_on_piece(piece_img, x, y, rot, additional_x, additional_y)
             new_canvas = Image.new('RGBA', (shared_canvas_width, shared_canvas_height), (0, 0, 0, 0))
             new_canvas.alpha_composite(new_piece)
+            solution_canvas_for_debug.alpha_composite(new_piece)
             image_canvases[piece_filename] = new_canvas
 
             gt_new_piece = self.apply_transformations_on_piece(piece_img, gt_x, gt_y, gt_rot, additional_x_for_gt,
                                                           additional_y_for_gt)
             new_gt_canvas = Image.new('RGBA', (shared_canvas_width, shared_canvas_height), (0, 0, 0, 0))
             new_gt_canvas.alpha_composite(gt_new_piece)
+            gt_canvas_for_debug.alpha_composite(gt_new_piece)
             gt_image_canvases[piece_filename] = new_gt_canvas
 
+       
         rotated_image_canvases = {}
         largest_piece = image_canvases[f'{additional_transformation["largest_piece_name"]}']
         non_alpha_bbox = Image.fromarray(np.array(largest_piece)[:, :, 3]).getbbox()
@@ -182,6 +191,7 @@ class Evaluation:
                 shared_area = self.calculate_shared_area(rotated_image_canvases[piece_filename],
                                                     gt_image_canvases[piece_filename])
                 partial_q_pos_score = piece_weight * (shared_area / result_area)
+                # partial_q_pos_score = shared_area
 
                 if log:
                     print(f"Piece: {piece_filename}")
@@ -189,11 +199,21 @@ class Evaluation:
                     print(f"Result area: {result_area}")
                     print(f"Shared area: {shared_area}")
                     print(f"Partial Q_pos score: {partial_q_pos_score}")
-
+                # total_area += result_area
                 q_pos += partial_q_pos_score
 
         if log:
             print(f"Q_pos score: {q_pos}")
+        
+        # import matplotlib.pyplot as plt
+        # plt.figure()
+        # plt.suptitle(f"Q_pos: {(q_pos):.03f}")
+        # plt.subplot(121); plt.title("SOLUTION")
+        # plt.imshow(np.array(solution_canvas_for_debug))
+        # plt.subplot(122); plt.title('GT')
+        # plt.imshow(np.array(gt_canvas_for_debug))
+        # plt.show()
+        # breakpoint()
 
         return q_pos if not debug else (q_pos, rotated_image_canvases, gt_image_canvases)
 
@@ -410,12 +430,12 @@ class Evaluation:
         new_image2.paste(image2, (0, 0))
         return new_image1, new_image2
 
-    def normalize_results_and_ground_truth(self, results, ground_truth):
+    def normalize_results_and_ground_truth(self, results, ground_truth, base_fragment):
         """
         Normalize the results and ground truth dictionaries to first piece.
         First piece is considered as the anchor piece and all other pieces are normalized toward it.
         """
-        base_fragment = next(iter(results.keys()))
+        # base_fragment = next(iter(results.keys()))
         print(f"Base fragment: {base_fragment}")
 
         for key in results.keys():
@@ -433,19 +453,17 @@ class Evaluation:
         res = {pid: [x - rx, y - ry, theta] for pid, (x, y, theta) in results.items()}
 
         # Normalize angle to the first piece
-
         d_theta = (g_theta - r_theta) % 360
         if d_theta:
             sin_t, cos_t = math.sin(math.radians(d_theta)), math.cos(math.radians(d_theta))
             res_rot = {}
             for pid, (x, y, theta) in res.items():
-                x2 = cos_t * x - sin_t * y
-                y2 = sin_t * x + cos_t * y
+                x2 = cos_t * x + sin_t * y
+                y2 = -1 * sin_t * x + cos_t * y
                 res_rot[pid] = [x2, y2, (theta + d_theta) % 360]
             res = res_rot
 
         # to avoid negative coordinates
-
         min_x = min(p[0] for p in gt.values())
         min_y = min(p[1] for p in gt.values())
         dx = -min_x if min_x < 0 else 0.0
