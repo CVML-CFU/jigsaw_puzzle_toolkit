@@ -54,8 +54,8 @@ def main():
                         path_lists = {}
                         pieces_fn = natsort.natsorted(os.listdir(os.path.join(preprocessing_folder, test_puzzle, 'images')))
                         pieces_names = [piece_n[:-4] for piece_n in pieces_fn ]
-                        scaling_factor = ground_truth_json['transform']
-                        scaling_xyz = np.asarray([scaling_factor[0][0], scaling_factor[1][1], scaling_factor[2][2]])
+                        transform_matrix = ground_truth_json['transform']
+                        scaling_xyz = np.asarray([transform_matrix[0][0], transform_matrix[1][1], transform_matrix[2][2]])
                         # print(scaling_xyz)
                         for j in range(solution.shape[0]):
                             pid = solution[j][0]
@@ -76,7 +76,7 @@ def main():
                         ## Evaluate
                         print("#" * 50)
                         print(f"Evaluating run {run}, sol {folder} on {test_puzzle}")    
-                        avg_q_pos, avg_rmse_rot, avg_rmse_translation = eval.evaluate(pieces_names, results, ground_truth, path_lists)
+                        avg_q_pos, avg_rmse_rot, avg_rmse_translation = eval.evaluate(pieces_names, results, ground_truth, path_lists, transform_matrix)
                         ## print stats
                                    
                         print(f"Q_pos: {avg_q_pos:.03f}")

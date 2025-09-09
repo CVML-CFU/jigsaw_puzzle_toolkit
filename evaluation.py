@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import math
+from sklearn.metrics import root_mean_squared_error
 
 from PIL import Image
 
@@ -16,7 +17,7 @@ class Evaluation:
             self._img_cache[pid] = img
         return img
 
-    def evaluate(self, pieces, results, ground_truth, path_lists):
+    def evaluate(self, pieces, results, ground_truth, path_lists, transform_matrix):
         """
         pieces is a list of pieces to evaluate
         results and ground_truth are two dictionary with the following keys:
@@ -24,7 +25,6 @@ class Evaluation:
             - a list corresponds to the piece id which gives the position in form of [x, y, theta]
         path_lists is a dictionary with the normalized id and the path to the corresponding image (.png)
         """
-
         results_org = results.copy()
         ground_truth_org = ground_truth.copy()
 
@@ -39,7 +39,7 @@ class Evaluation:
 
         q_pos = 0
         q_pos = self.calculate_q_pos(pieces, results, ground_truth, path_lists)
-        rmse_value = self.calculate_rmse(pieces, results, ground_truth, path_lists)
+        rmse_value = self.calculate_rmse(pieces, results, ground_truth, path_lists, transform_matrix)
 
         new_row = pd.DataFrame([{'object_name': 3, 'Q_pos': q_pos, 'RMSE_rot': rmse_value['RMSE_rot'],
                                  'RMSE_translation': rmse_value['RMSE_translation']}])
@@ -56,7 +56,7 @@ class Evaluation:
         # Placeholder for evaluation logic
         return avg_q_pos, avg_rmse_rot, avg_rmse_translation
 
-    def calculate_rmse(self, pieces, results, ground_truth, path_lists, pxls_to_m_scaler = (1/7.369)):
+    def calculate_rmse(self, pieces, results, ground_truth, path_lists, transform_matrix):
         # Load the CSV files into pandas DataFrames
         result_data = []
         gt_data = []
@@ -85,16 +85,95 @@ class Evaluation:
         merged_df['y_result'] = merged_df['y_result'] + additional_transformation['y']
         merged_df['rot_result'] = (merged_df['rot_result'] + additional_transformation['rot']) % 360
 
-        rmse_translation = np.average(np.sqrt((merged_df['x_result'] - merged_df['x_gt']) ** 2 +
-                                              (merged_df['y_result'] - merged_df[
-                                                  'y_gt']) ** 2) * pxls_to_m_scaler) * 1 / np.sqrt(2)
+        
 
-        rmse_rot = 1 / np.sqrt(2) * np.average(
-            np.sqrt((merged_df['rot_result'] % 360 - merged_df['rot_gt'] % 360) ** 2))
+        ##############################################################################################
+        #                                                                                            #
+        # ████████╗██████╗  █████╗ ███╗   ██╗███████╗██╗      █████╗ ████████╗██╗ ██████╗ ███╗   ██╗ #
+        # ╚══██╔══╝██╔══██╗██╔══██╗████╗  ██║██╔════╝██║     ██╔══██╗╚══██╔══╝██║██╔═══██╗████╗  ██║ #
+        #    ██║   ██████╔╝███████║██╔██╗ ██║███████╗██║     ███████║   ██║   ██║██║   ██║██╔██╗ ██║ #
+        #    ██║   ██╔══██╗██╔══██║██║╚██╗██║╚════██║██║     ██╔══██║   ██║   ██║██║   ██║██║╚██╗██║ #
+        #    ██║   ██║  ██║██║  ██║██║ ╚████║███████║███████╗██║  ██║   ██║   ██║╚██████╔╝██║ ╚████║ #
+        #    ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝ #
+        #                                                                                            #
+        ##############################################################################################
+
+        ####
+        # RMSE according to "standard" knowledge
+        # it may be different from the neurips paper
+        ####
+        pxls_to_m_scale = transform_matrix[0][0]
+        N = len(pieces)
+
+        T_estimated = np.zeros((N-1, 2)) # 1 piece is the reference, so no error
+        T_estimated[:,0] = merged_df['x_result'].values
+        T_estimated[:,1] = merged_df['y_result'].values
+
+        T_gt = np.zeros((N-1, 2)) # 1 piece is the reference, so excluded
+        T_gt[:,0] = merged_df['x_gt'].values
+        T_gt[:,1] = merged_df['y_gt'].values
+
+        euclidean_distances = np.linalg.norm(T_estimated - T_gt, axis=1, ord=2)
+        euclidean_distances_in_mm = euclidean_distances * pxls_to_m_scale
+        # the RMSE error between the distances and zero (if the T_estimated are exactly the T_gt, dists are zero!)
+        RMSE_t = root_mean_squared_error(euclidean_distances_in_mm, np.zeros((N-1,1)))
+
+        # print("lib RMSE")
+        # print(RMSE_t)
+
+        ############################################
+        # This gives the correct result, but using libraries seemed the best way 
+        ############################################
+        # err_dist = np.sqrt((merged_df['x_result'] - merged_df['x_gt']) ** 2 + (merged_df['y_result'] - merged_df['y_gt']) ** 2)  * pxls_to_m_scale 
+        # rmse_translation_v2 = np.sqrt(np.average(err_dist**2))
+
+        # print("new RMSE second version")
+        # print(rmse_translation_v2)
+        ############################################
+
+        ############################################
+        # OLD VERSION 
+        # probably not correct! 
+        # gives different value
+        # rmse_translation = np.average(np.sqrt((merged_df['x_result'] - merged_df['x_gt']) ** 2 +
+        #                                       (merged_df['y_result'] - merged_df[
+        #                                           'y_gt']) ** 2) * pxls_to_m_scale) * 1 / np.sqrt(2)
+        # print("old RMSE")
+        # print(rmse_translation)
+        # breakpoint()
+        ############################################
+
+        
+
+        #####################################################################
+        #                                                                   #
+        # ██████╗  ██████╗ ████████╗ █████╗ ████████╗██╗ ██████╗ ███╗   ██╗ #
+        # ██╔══██╗██╔═══██╗╚══██╔══╝██╔══██╗╚══██╔══╝██║██╔═══██╗████╗  ██║ #
+        # ██████╔╝██║   ██║   ██║   ███████║   ██║   ██║██║   ██║██╔██╗ ██║ #
+        # ██╔══██╗██║   ██║   ██║   ██╔══██║   ██║   ██║██║   ██║██║╚██╗██║ #
+        # ██║  ██║╚██████╔╝   ██║   ██║  ██║   ██║   ██║╚██████╔╝██║ ╚████║ #
+        # ╚═╝  ╚═╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝ #
+        #                                                                   #
+        #####################################################################
+        R_estimated = np.zeros((N-1, 1)) # 1 piece is the reference, so no error
+        R_estimated[:,0] = merged_df['rot_result'].values
+
+        R_gt = np.zeros((N-1, 1)) # 1 piece is the reference, so excluded
+        R_gt[:,0] = merged_df['rot_gt'].values
+
+        euclidean_distances_rotations = np.linalg.norm(R_estimated - R_gt, axis=1, ord=2)
+        # the RMSE error between the distances and zero (if the T_estimated are exactly the T_gt, dists are zero!)
+        RMSE_r = root_mean_squared_error(euclidean_distances_rotations, np.zeros((N-1,1)))
+
+        # OLD VERSION
+        # rmse_rot = 1 / np.sqrt(2) * np.average(
+        #     np.sqrt((merged_df['rot_result'] % 360 - merged_df['rot_gt'] % 360) ** 2))
+
+        # print(f"RMSE R: \n\tlib: {RMSE_r}\n\told: {rmse_rot}")
 
         rmse_values = {
-            'RMSE_rot': rmse_rot % 360,
-            'RMSE_translation': rmse_translation
+            'RMSE_rot': RMSE_r % 360,
+            'RMSE_translation': RMSE_t
         }
 
         return rmse_values
