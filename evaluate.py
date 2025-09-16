@@ -9,12 +9,13 @@ import json
 
 def main():
 
-    #data_dir = "/run/user/1000/gvfs/sftp:host=gpu1.dsi.unive.it,user=luca.palmieri/home/ssd/datasets/RePAIR_ReLab_luca"
-    data_dir = "/run/user/1000/gvfs/sftp:host=gpu1.dsi.unive.it,user=m.khoroshiltseva/home/ssd/datasets/RePAIR_ReLab_marina/"
+    data_dir = "/run/user/1000/gvfs/sftp:host=gpu1.dsi.unive.it,user=luca.palmieri/home/ssd/datasets/RePAIR_ReLab_luca"
+    # data_dir = "/run/user/1000/gvfs/sftp:host=gpu1.dsi.unive.it,user=m.khoroshiltseva/home/ssd/datasets/RePAIR_ReLab_marina/"
     test_set = np.loadtxt(os.path.join(data_dir, 'PAD_v2', 'test.txt'), dtype=str)
     # test_set = test_set[10:]
     experiments_folder = os.path.join(data_dir, 'experiments')
     preprocessing_folder = os.path.join(data_dir, 'preprocessing')
+    preprocessing_folder_rescaling = "/run/user/1000/gvfs/sftp:host=gpu1.dsi.unive.it,user=luca.palmieri/home/ssd/datasets/RePAIR_ReLab_luca_resize"
     Q_pos_list = []
     xy_num_points_list = []
     theta_num_points_list = []
@@ -44,12 +45,15 @@ def main():
                         sol_path = os.path.join(test_puzzle_folder, run, folder, 'solution.txt')
                         if os.path.exists(sol_path):
                             print("solution found")
+
                             # solution as numpy array
                             solution = np.loadtxt(sol_path, dtype=str)
                             # gt as numpy array
                             ground_truth_xyz = np.loadtxt(os.path.join(preprocessing_folder, test_puzzle, 'ground_truth.txt'))
                             with open(os.path.join(preprocessing_folder, test_puzzle, 'ground_truth.json'), 'r') as jgtp:
                                 ground_truth_json = json.load(jgtp)
+                            with open(os.path.join(preprocessing_folder_rescaling, test_puzzle, 'puzzle_info.json'), 'r') as jpi:
+                                puzzle_info = json.load(jpi)
                             # Create the dictionaries with piece id as key and the values
                             results = {}
                             ground_truth = {}
@@ -74,43 +78,43 @@ def main():
                             # piece_path = os.path.join(preprocessing_folder, test_puzzle, 'images', f"{pid}.png")
                             # path_lists[pid] = piece_path                        
                             
-                        eval = Evaluation()
-                        ## Evaluate
-                        print("#" * 50)
-                        print(f"Evaluating run {run}, sol {folder} on {test_puzzle}")    
-                        avg_q_pos, avg_rmse_rot, avg_rmse_translation = eval.evaluate(pieces_names, results, ground_truth, path_lists, transform_matrix)
-                        ## print stats
+                            eval = Evaluation()
+                            ## Evaluate
+                            print("#" * 50)
+                            print(f"Evaluating run {run}, sol {folder} on {test_puzzle}")    
+                            avg_q_pos, avg_rmse_rot, avg_rmse_translation = eval.evaluate(pieces_names, results, ground_truth, path_lists, transform_matrix, puzzle_info)
+                            ## print stats
                                    
-                        print(f"Q_pos: {avg_q_pos:.03f}")
-                        print(f"RMSE_rot: {avg_rmse_rot:.03f}")
-                        print(f"RMSE_t: {avg_rmse_translation:.03f}")
-                        print("-" * 30)
-                        # print params so I understand what I am evaluating
-                        with open(os.path.join(test_puzzle_folder, run, folder, 'solution_output_params.yaml'), 'r') as yf:
-                            params = yaml.safe_load(yf)
-                        print("Parameters:")
-                        print(f"CM: \t{params['aggregation']['method']}")
-                        print(f"Solver:")
-                        if 'anchor_index' in params['solver'].keys():
-                            anchor_idx = params['solver']['anchor_index']
-                        elif 'anchor_idx' in params['solver'].keys():
-                            anchor_idx = params['solver']['anchor_idx']
-                        else:
-                            anchor_idx = params['input_params']['solver']['anchor_index']
-                        print(f"\tAnchor: {anchor_idx}")
-                        print(f"\tTmax: {params['solver']['T_max']}")                
-                        # print(f"\tPQ_mode: {params['solver']['PQ_mode']}")
-                        print("#" * 50)
+                            print(f"Q_pos: {avg_q_pos:.03f}")
+                            print(f"RMSE_rot: {avg_rmse_rot:.03f}")
+                            print(f"RMSE_t: {avg_rmse_translation:.03f}")
+                            print("-" * 30)
+                            # print params so I understand what I am evaluating
+                            with open(os.path.join(test_puzzle_folder, run, folder, 'solution_output_params.yaml'), 'r') as yf:
+                                params = yaml.safe_load(yf)
+                            print("Parameters:")
+                            print(f"CM: \t{params['aggregation']['method']}")
+                            print(f"Solver:")
+                            if 'anchor_index' in params['solver'].keys():
+                                anchor_idx = params['solver']['anchor_index']
+                            elif 'anchor_idx' in params['solver'].keys():
+                                anchor_idx = params['solver']['anchor_idx']
+                            else:
+                                anchor_idx = params['input_params']['solver']['anchor_index']
+                            print(f"\tAnchor: {anchor_idx}")
+                            print(f"\tTmax: {params['solver']['T_max']}")                
+                            # print(f"\tPQ_mode: {params['solver']['PQ_mode']}")
+                            print("#" * 50)
 
-                        Q_pos_list.append(avg_q_pos)
-                        RMSE_r_list.append(avg_rmse_rot)
-                        RMSE_t_list.append(avg_rmse_translation)
-                        CM_type_list.append(params['aggregation']['method'])
-                        xy_num_points_list.append(params['grid_params']['xy_num_points'])
-                        theta_num_points_list.append(params['grid_params']['theta_num_points'])
-                        no_rotations_list.append(params['solver']['no_rotations'])
-                        anchor_ids_list.append(anchor_idx)
-                        evaluated_test_set.append(test_puzzle)
+                            Q_pos_list.append(avg_q_pos)
+                            RMSE_r_list.append(avg_rmse_rot)
+                            RMSE_t_list.append(avg_rmse_translation)
+                            CM_type_list.append(params['aggregation']['method'])
+                            xy_num_points_list.append(params['grid_params']['xy_num_points'])
+                            theta_num_points_list.append(params['grid_params']['theta_num_points'])
+                            no_rotations_list.append(params['solver']['no_rotations'])
+                            anchor_ids_list.append(anchor_idx)
+                            evaluated_test_set.append(test_puzzle)
                 
     eval_df = pd.DataFrame()
     eval_df['puzzle'] = evaluated_test_set

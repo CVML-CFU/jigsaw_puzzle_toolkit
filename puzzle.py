@@ -239,8 +239,9 @@ class Puzzle:
             self.puzzle_info['binary_masks_available'] = True
             self.puzzle_info['polygons_available'] = True
             self.puzzle_info['ground_truth_available'] = True
-            self.puzzle_info['max_dist_from_center'] = int(self.max_enclosing_radius)
+            self.puzzle_info['max_dist_from_center'] = np.ceil(self.max_enclosing_radius).astype(float)
             self.puzzle_info['padding'] = self.padding
+            self.puzzle_info['rescaling_factor'] = rescaling_factor
             # self.show_piece(3)
             # breakpoint()
             # print(self.sizes)
@@ -422,24 +423,25 @@ class Puzzle:
         return cen_image, cen_bmask, cen_polygon, np.asarray([shift_x, shift_y])
 
     def save(self):
+        # breakpoint()
         print("saving..")
         self.output_dir = os.path.join(self.output_path, os.path.basename(os.path.dirname(os.path.join(self.input_path))))
         os.makedirs(self.output_dir, exist_ok=True)
-        images_out_dir = os.path.join(self.output_dir, 'images')
-        os.makedirs(images_out_dir, exist_ok=True)
-        bmasks_out_dir = os.path.join(self.output_dir, 'binary_masks')
-        os.makedirs(bmasks_out_dir, exist_ok=True)        
-        polygons_out_dir = os.path.join(self.output_dir, 'polygons')
-        os.makedirs(polygons_out_dir, exist_ok=True)
-        for frag_key in self.input_data.keys():
-            frag_data = self.input_data[frag_key]
+        # images_out_dir = os.path.join(self.output_dir, 'images')
+        # os.makedirs(images_out_dir, exist_ok=True)
+        # bmasks_out_dir = os.path.join(self.output_dir, 'binary_masks')
+        # os.makedirs(bmasks_out_dir, exist_ok=True)        
+        # polygons_out_dir = os.path.join(self.output_dir, 'polygons')
+        # os.makedirs(polygons_out_dir, exist_ok=True)
+        # for frag_key in self.input_data.keys():
+        #     frag_data = self.input_data[frag_key]
 
-            # for name, image, bmask, polygon in zip(self.names, self.images, self.masks, self.polygons):
-            plt.imsave(os.path.join(images_out_dir, f"{frag_data['idx']}_{frag_data['name']}.png"), frag_data['image'])
-            cv2.imwrite(os.path.join(bmasks_out_dir, f"{frag_data['idx']}_{frag_data['name']}.png"), frag_data['mask'])
-            np.save(os.path.join(polygons_out_dir, f"{frag_data['idx']}_{frag_data['name']}"), frag_data['polygon'])
+        #     # for name, image, bmask, polygon in zip(self.names, self.images, self.masks, self.polygons):
+        #     plt.imsave(os.path.join(images_out_dir, f"{frag_data['idx']}_{frag_data['name']}.png"), frag_data['image'])
+        #     cv2.imwrite(os.path.join(bmasks_out_dir, f"{frag_data['idx']}_{frag_data['name']}.png"), frag_data['mask'])
+        #     np.save(os.path.join(polygons_out_dir, f"{frag_data['idx']}_{frag_data['name']}"), frag_data['polygon'])
         
-        np.savetxt(os.path.join(self.output_dir, "ground_truth.txt"), np.asarray(self.positions))
+        # np.savetxt(os.path.join(self.output_dir, "ground_truth.txt"), np.asarray(self.positions))
         with open(os.path.join(self.output_dir, "ground_truth.json"), 'w') as jf:
             json.dump(self.gt, jf, indent=2)
         with open(os.path.join(self.output_dir, "puzzle_info.json"), 'w') as jf:

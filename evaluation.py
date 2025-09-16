@@ -17,7 +17,7 @@ class Evaluation:
             self._img_cache[pid] = img
         return img
 
-    def evaluate(self, pieces, results, ground_truth, path_lists, transform_matrix):
+    def evaluate(self, pieces, results, ground_truth, path_lists, transform_matrix, puzzle_info):
         """
         pieces is a list of pieces to evaluate
         results and ground_truth are two dictionary with the following keys:
@@ -39,7 +39,7 @@ class Evaluation:
 
         q_pos = 0
         q_pos = self.calculate_q_pos(pieces, results, ground_truth, path_lists)
-        rmse_value = self.calculate_rmse(pieces, results, ground_truth, path_lists, transform_matrix)
+        rmse_value = self.calculate_rmse(pieces, results, ground_truth, path_lists, transform_matrix, puzzle_info)
 
         new_row = pd.DataFrame([{'object_name': 3, 'Q_pos': q_pos, 'RMSE_rot': rmse_value['RMSE_rot'],
                                  'RMSE_translation': rmse_value['RMSE_translation']}])
@@ -56,7 +56,7 @@ class Evaluation:
         # Placeholder for evaluation logic
         return avg_q_pos, avg_rmse_rot, avg_rmse_translation
 
-    def calculate_rmse(self, pieces, results, ground_truth, path_lists, transform_matrix):
+    def calculate_rmse(self, pieces, results, ground_truth, path_lists, transform_matrix, puzzle_info=None):
         # Load the CSV files into pandas DataFrames
         result_data = []
         gt_data = []
@@ -113,10 +113,24 @@ class Evaluation:
         T_gt[:,0] = merged_df['x_gt'].values
         T_gt[:,1] = merged_df['y_gt'].values
 
-        euclidean_distances = np.linalg.norm(T_estimated - T_gt, axis=1, ord=2)
-        euclidean_distances_in_mm = euclidean_distances * pxls_to_m_scale
+        euclidean_distances_in_RL = np.linalg.norm(T_estimated - T_gt, axis=1, ord=2)               # these are the distances in our "resized" images
+        if puzzle_info is not None:
+            euclidean_distances_in_px = euclidean_distances_in_RL * puzzle_info['rescaling_factor']     # these are distances in the pixel space (rendered one)
+        else:
+            euclidean_distances_in_px = euclidean_distances_in_RL
+        euclidean_distances_in_mm = euclidean_distances_in_px * pxls_to_m_scale                     # these are distances in millimeters (real values)
         # the RMSE error between the distances and zero (if the T_estimated are exactly the T_gt, dists are zero!)
         RMSE_t = root_mean_squared_error(euclidean_distances_in_mm, np.zeros((N-1,1)))
+
+        # print("*" * 50)
+        # print(f"Errors for {N-1} pieces")
+        # print(f"ED_RL: {euclidean_distances_in_RL}")
+        # print(f"ED_px: {euclidean_distances_in_px}")
+        # print(f"ED_mm: {euclidean_distances_in_mm}")
+        # print("-" * 50)
+        # print(f"RMSE (t): {RMSE_t}")
+        # print("*" * 50)
+        # breakpoint()
 
         # print("lib RMSE")
         # print(RMSE_t)
