@@ -16,6 +16,7 @@ def main():
     experiments_folder = os.path.join(data_dir, 'experiments')
     preprocessing_folder = os.path.join(data_dir, 'preprocessing')
     Q_pos_list = []
+    Q_pos_best_list = []
     xy_num_points_list = []
     theta_num_points_list = []
     no_rotations_list = []
@@ -78,10 +79,11 @@ def main():
                         ## Evaluate
                         print("#" * 50)
                         print(f"Evaluating run {run}, sol {folder} on {test_puzzle}")    
-                        avg_q_pos, avg_rmse_rot, avg_rmse_translation = eval.evaluate(pieces_names, results, ground_truth, path_lists, transform_matrix)
+                        avg_q_pos, avg_q_pos_best, avg_rmse_rot, avg_rmse_translation = eval.evaluate(pieces_names, results, ground_truth, path_lists, transform_matrix)
                         ## print stats
                                    
                         print(f"Q_pos: {avg_q_pos:.03f}")
+                        print(f"Q_pos_Best: {avg_q_pos_best:.03f}")
                         print(f"RMSE_rot: {avg_rmse_rot:.03f}")
                         print(f"RMSE_t: {avg_rmse_translation:.03f}")
                         print("-" * 30)
@@ -103,6 +105,7 @@ def main():
                         print("#" * 50)
 
                         Q_pos_list.append(avg_q_pos)
+                        Q_pos_best_list.append(avg_q_pos_best)
                         RMSE_r_list.append(avg_rmse_rot)
                         RMSE_t_list.append(avg_rmse_translation)
                         CM_type_list.append(params['aggregation']['method'])
@@ -120,6 +123,7 @@ def main():
     eval_df['theta_num_points'] = theta_num_points_list
     eval_df['without_rotations'] = no_rotations_list
     eval_df['Q_pos'] = Q_pos_list
+    eval_df['Q_pos_Best'] = Q_pos_best_list
     eval_df['RMSE (r)'] = RMSE_r_list
     eval_df['RMSE (t)'] = RMSE_t_list
     timestamp = datetime.now().strftime('%Y%m%d')
