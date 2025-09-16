@@ -33,15 +33,15 @@ class Evaluation:
 
         ground_truth, results = self.normalize_results_and_ground_truth(results, ground_truth, largest_piece)
 
-        scores_df = pd.DataFrame(columns=['object_name', 'Q_pos', 'RMSE_rot', 'RMSE_translation'])
+        scores_df = pd.DataFrame(columns=['object_name', 'Q_pos', 'Q_pos_Best', 'RMSE_rot', 'RMSE_translation'])
 
         # for piece in pieces:
 
-        q_pos = 0
+        q_pos_best = self.calculate_q_pos_option2(pieces, results, ground_truth, path_lists)
         q_pos = self.calculate_q_pos(pieces, results, ground_truth, path_lists)
         rmse_value = self.calculate_rmse(pieces, results, ground_truth, path_lists, transform_matrix, puzzle_info)
 
-        new_row = pd.DataFrame([{'object_name': 3, 'Q_pos': q_pos, 'RMSE_rot': rmse_value['RMSE_rot'],
+        new_row = pd.DataFrame([{'object_name': 3, 'Q_pos': q_pos, 'Q_pos_Best': q_pos_best,'RMSE_rot': rmse_value['RMSE_rot'],
                                  'RMSE_translation': rmse_value['RMSE_translation']}])
 
         scores_df = pd.concat([scores_df, new_row], ignore_index=True)
@@ -49,12 +49,14 @@ class Evaluation:
         # fill in blank values with 0
         scores_df.fillna(0, inplace=True)
 
+        ## why we need ".mean()" ?
         avg_q_pos = scores_df['Q_pos'].mean()
+        avg_q_pos_best = scores_df['Q_pos_Best'].mean()
         avg_rmse_rot = scores_df['RMSE_rot'].mean()
         avg_rmse_translation = scores_df['RMSE_translation'].mean()
 
         # Placeholder for evaluation logic
-        return avg_q_pos, avg_rmse_rot, avg_rmse_translation
+        return avg_q_pos, avg_q_pos_best, avg_rmse_rot, avg_rmse_translation
 
     def calculate_rmse(self, pieces, results, ground_truth, path_lists, transform_matrix, puzzle_info=None):
         # Load the CSV files into pandas DataFrames
@@ -191,6 +193,138 @@ class Evaluation:
         }
 
         return rmse_values
+
+    def calculate_q_pos_option2(self, pieces, results, ground_truth, path_lists, log=False, debug=False):
+        """
+           Calculates the score of the placement of the pieces on the shared canvas.
+
+           ::param pieces_dir: the directory containing the pieces
+           ::param transformations_dir: the csv file containing the result transformations
+           ::param gt_transformations_dir: the csv file containing the ground truth transformations
+           ::param log: whether to print the intermediate results or not
+           """
+
+        transformations_df = self.read_transformations(pieces, results)
+        transformations_non_negative = self.read_transformations(pieces, results, make_non_negative=True)
+        gt_transformations_df = self.read_transformations(pieces, ground_truth)
+
+        # Initialize the shared canvas with the largest piece
+        shared_canvas_width, shared_canvas_height = self.calculate_shared_canvas_size(pieces, transformations_df,
+                                                                                      gt_transformations_df, path_lists)
+
+        #pieces_weights = self.calculate_pieces_weights(pieces, path_lists, exclude_largest_piece=False)
+
+        q_pos_pieces = np.zeros(len(pieces))
+        #for piece_id in pieces:
+        for i in range(len(pieces)):
+            piece_id = pieces[i]
+            additional_transformation = self.get_transformation_for_largest_piece(pieces, transformations_df,
+                                                                                  gt_transformations_df, path_lists, largest_piece=piece_id)
+
+            additional_x = additional_x_for_gt = additional_y = additional_y_for_gt = 0
+            if additional_transformation['x'] < 0:
+                additional_x_for_gt = abs(additional_transformation['x'])
+            else:
+                additional_x = additional_transformation['x']
+            if additional_transformation['y'] < 0:
+                additional_y_for_gt = abs(additional_transformation['y'])
+            else:
+                additional_y = additional_transformation['y']
+
+            additional_rot = additional_transformation['rot']
+
+            pieces_weights = self.calculate_pieces_weights(pieces, path_lists, exclude_largest_piece=True, largest_piece=additional_transformation['largest_piece_name'])
+            q_pos = 0
+            total_area = 0
+
+            image_canvases = {}
+            gt_image_canvases = {}
+
+            # Apply the transformations on all the pieces then place them on the shared canvas
+            solution_canvas_for_debug = Image.new('RGBA', (shared_canvas_width, shared_canvas_height), (0, 0, 0, 0))
+            gt_canvas_for_debug = Image.new('RGBA', (shared_canvas_width, shared_canvas_height), (0, 0, 0, 0))
+            for index, row in transformations_non_negative.iterrows():
+                piece_filename = row['rpf']
+                x = int(row['x'])
+                y = int(row['y'])
+                rot = row['rot']
+                gt_x = int(gt_transformations_df[gt_transformations_df['rpf'] == piece_filename].iloc[0]['x'])
+                gt_y = int(gt_transformations_df[gt_transformations_df['rpf'] == piece_filename].iloc[0]['y'])
+                gt_rot = int(gt_transformations_df[gt_transformations_df['rpf'] == piece_filename].iloc[0]['rot'])
+
+                piece_img = self._get_img(piece_filename, path_lists)
+
+                new_piece = self.apply_transformations_on_piece(piece_img, x, y, rot, additional_x, additional_y)
+                new_canvas = Image.new('RGBA', (shared_canvas_width, shared_canvas_height), (0, 0, 0, 0))
+                new_canvas.alpha_composite(new_piece)
+                solution_canvas_for_debug.alpha_composite(new_piece)
+                image_canvases[piece_filename] = new_canvas
+
+                gt_new_piece = self.apply_transformations_on_piece(piece_img, gt_x, gt_y, gt_rot, additional_x_for_gt,
+                                                                   additional_y_for_gt)
+                new_gt_canvas = Image.new('RGBA', (shared_canvas_width, shared_canvas_height), (0, 0, 0, 0))
+                new_gt_canvas.alpha_composite(gt_new_piece)
+                gt_canvas_for_debug.alpha_composite(gt_new_piece)
+                gt_image_canvases[piece_filename] = new_gt_canvas
+
+            rotated_image_canvases = {}
+            largest_piece = image_canvases[f'{additional_transformation["largest_piece_name"]}']
+
+
+            non_alpha_bbox = Image.fromarray(np.array(largest_piece)[:, :, 3]).getbbox()
+            center_x = (non_alpha_bbox[2] + non_alpha_bbox[0]) / 2
+            center_y = (non_alpha_bbox[3] + non_alpha_bbox[1]) / 2
+            rotated_largest_piece = largest_piece.rotate(additional_rot, expand=True, center=(center_x, center_y))
+            rotated_image_canvases[f'{additional_transformation["largest_piece_name"]}'] = rotated_largest_piece
+            for piece_filename in image_canvases:
+                if piece_filename == f'{additional_transformation["largest_piece_name"]}':
+                    continue
+                else:
+                    piece = image_canvases[piece_filename]
+                    rotated_piece = piece.rotate(additional_rot, expand=True, center=(center_x, center_y))
+                    rotated_image_canvases[piece_filename] = rotated_piece
+
+            # Calculate the Q_pos score
+            for piece_filename in image_canvases:
+                if piece_filename != f'{additional_transformation["largest_piece_name"]}':
+                    piece_weight = pieces_weights[piece_filename]
+                    result_area = self.calculate_area(rotated_image_canvases[piece_filename])
+                    shared_area = self.calculate_shared_area(rotated_image_canvases[piece_filename],
+                                                             gt_image_canvases[piece_filename])
+                    partial_q_pos_score = piece_weight * (shared_area / result_area)
+                    # partial_q_pos_score = shared_area
+
+                    if log:
+                        print(f"Piece: {piece_filename}")
+                        print(f"Piece weight: {piece_weight}")
+                        print(f"Result area: {result_area}")
+                        print(f"Shared area: {shared_area}")
+                        print(f"Partial Q_pos score: {partial_q_pos_score}")
+                    # total_area += result_area
+                    q_pos += partial_q_pos_score
+
+            if log:
+                print(f"Q_pos score for piece {piece_id}: {q_pos}")
+
+            q_pos_pieces[i] = q_pos
+
+
+            # import matplotlib.pyplot as plt
+            # plt.figure()
+            # plt.suptitle(f"Q_pos: {(q_pos):.03f}")
+            # plt.subplot(121); plt.title("SOLUTION")
+            # plt.imshow(np.array(solution_canvas_for_debug))
+            # plt.subplot(122); plt.title('GT')
+            # plt.imshow(np.array(gt_canvas_for_debug))
+            # plt.show()
+            # breakpoint()
+
+        q_pos_best = np.max(q_pos_pieces)
+        id_best = np.argmax(q_pos_pieces)
+
+        print(f"BEST Q_pos score: {q_pos_best} with reference piece {pieces[id_best]} ")
+
+        return q_pos_best
 
     def calculate_q_pos(self, pieces, results, ground_truth, path_lists, log=False, debug=False):
         """

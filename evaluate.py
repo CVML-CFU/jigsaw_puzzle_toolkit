@@ -17,6 +17,7 @@ def main():
     preprocessing_folder = os.path.join(data_dir, 'preprocessing')
     preprocessing_folder_rescaling = "/run/user/1000/gvfs/sftp:host=gpu1.dsi.unive.it,user=luca.palmieri/home/ssd/datasets/RePAIR_ReLab_luca_resize"
     Q_pos_list = []
+    Q_pos_best_list = []
     xy_num_points_list = []
     theta_num_points_list = []
     no_rotations_list = []
@@ -78,43 +79,45 @@ def main():
                             # piece_path = os.path.join(preprocessing_folder, test_puzzle, 'images', f"{pid}.png")
                             # path_lists[pid] = piece_path                        
                             
-                            eval = Evaluation()
-                            ## Evaluate
-                            print("#" * 50)
-                            print(f"Evaluating run {run}, sol {folder} on {test_puzzle}")    
-                            avg_q_pos, avg_rmse_rot, avg_rmse_translation = eval.evaluate(pieces_names, results, ground_truth, path_lists, transform_matrix, puzzle_info)
-                            ## print stats
+                        eval = Evaluation()
+                        ## Evaluate
+                        print("#" * 50)
+                        print(f"Evaluating run {run}, sol {folder} on {test_puzzle}")    
+                        avg_q_pos, avg_q_pos_best, avg_rmse_rot, avg_rmse_translation = eval.evaluate(pieces_names, results, ground_truth, path_lists, transform_matrix)
+                        ## print stats
                                    
-                            print(f"Q_pos: {avg_q_pos:.03f}")
-                            print(f"RMSE_rot: {avg_rmse_rot:.03f}")
-                            print(f"RMSE_t: {avg_rmse_translation:.03f}")
-                            print("-" * 30)
-                            # print params so I understand what I am evaluating
-                            with open(os.path.join(test_puzzle_folder, run, folder, 'solution_output_params.yaml'), 'r') as yf:
-                                params = yaml.safe_load(yf)
-                            print("Parameters:")
-                            print(f"CM: \t{params['aggregation']['method']}")
-                            print(f"Solver:")
-                            if 'anchor_index' in params['solver'].keys():
-                                anchor_idx = params['solver']['anchor_index']
-                            elif 'anchor_idx' in params['solver'].keys():
-                                anchor_idx = params['solver']['anchor_idx']
-                            else:
-                                anchor_idx = params['input_params']['solver']['anchor_index']
-                            print(f"\tAnchor: {anchor_idx}")
-                            print(f"\tTmax: {params['solver']['T_max']}")                
-                            # print(f"\tPQ_mode: {params['solver']['PQ_mode']}")
-                            print("#" * 50)
+                        print(f"Q_pos: {avg_q_pos:.03f}")
+                        print(f"Q_pos_Best: {avg_q_pos_best:.03f}")
+                        print(f"RMSE_rot: {avg_rmse_rot:.03f}")
+                        print(f"RMSE_t: {avg_rmse_translation:.03f}")
+                        print("-" * 30)
+                        # print params so I understand what I am evaluating
+                        with open(os.path.join(test_puzzle_folder, run, folder, 'solution_output_params.yaml'), 'r') as yf:
+                            params = yaml.safe_load(yf)
+                        print("Parameters:")
+                        print(f"CM: \t{params['aggregation']['method']}")
+                        print(f"Solver:")
+                        if 'anchor_index' in params['solver'].keys():
+                            anchor_idx = params['solver']['anchor_index']
+                        elif 'anchor_idx' in params['solver'].keys():
+                            anchor_idx = params['solver']['anchor_idx']
+                        else:
+                            anchor_idx = params['input_params']['solver']['anchor_index']
+                        print(f"\tAnchor: {anchor_idx}")
+                        print(f"\tTmax: {params['solver']['T_max']}")                
+                        # print(f"\tPQ_mode: {params['solver']['PQ_mode']}")
+                        print("#" * 50)
 
-                            Q_pos_list.append(avg_q_pos)
-                            RMSE_r_list.append(avg_rmse_rot)
-                            RMSE_t_list.append(avg_rmse_translation)
-                            CM_type_list.append(params['aggregation']['method'])
-                            xy_num_points_list.append(params['grid_params']['xy_num_points'])
-                            theta_num_points_list.append(params['grid_params']['theta_num_points'])
-                            no_rotations_list.append(params['solver']['no_rotations'])
-                            anchor_ids_list.append(anchor_idx)
-                            evaluated_test_set.append(test_puzzle)
+                        Q_pos_list.append(avg_q_pos)
+                        Q_pos_best_list.append(avg_q_pos_best)
+                        RMSE_r_list.append(avg_rmse_rot)
+                        RMSE_t_list.append(avg_rmse_translation)
+                        CM_type_list.append(params['aggregation']['method'])
+                        xy_num_points_list.append(params['grid_params']['xy_num_points'])
+                        theta_num_points_list.append(params['grid_params']['theta_num_points'])
+                        no_rotations_list.append(params['solver']['no_rotations'])
+                        anchor_ids_list.append(anchor_idx)
+                        evaluated_test_set.append(test_puzzle)
                 
     eval_df = pd.DataFrame()
     eval_df['puzzle'] = evaluated_test_set
@@ -124,6 +127,7 @@ def main():
     eval_df['theta_num_points'] = theta_num_points_list
     eval_df['without_rotations'] = no_rotations_list
     eval_df['Q_pos'] = Q_pos_list
+    eval_df['Q_pos_Best'] = Q_pos_best_list
     eval_df['RMSE (r)'] = RMSE_r_list
     eval_df['RMSE (t)'] = RMSE_t_list
     timestamp = datetime.now().strftime('%Y%m%d')
