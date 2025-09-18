@@ -39,10 +39,14 @@ class Evaluation:
 
         q_pos_best = self.calculate_q_pos_option2(pieces, results, ground_truth, path_lists)
         q_pos = self.calculate_q_pos(pieces, results, ground_truth, path_lists)
-        rmse_value = self.calculate_rmse(pieces, results, ground_truth, path_lists, transform_matrix, puzzle_info)
+        rmse_values = self.calculate_rmse(pieces, results, ground_truth, path_lists, transform_matrix, puzzle_info)
+        geodesic_r = 0 # TODO: calculate geodeisc loss (exists in github)
 
-        new_row = pd.DataFrame([{'object_name': 3, 'Q_pos': q_pos, 'Q_pos_Best': q_pos_best,'RMSE_rot': rmse_value['RMSE_rot'],
-                                 'RMSE_translation': rmse_value['RMSE_translation']}])
+        new_row = pd.DataFrame([{'object_name': 3, 'Q_pos': q_pos, 'Q_pos_Best': q_pos_best, \
+                                'RMSE_rot': rmse_values['RMSE_rot'],
+                                'RMSE_translation_RL': rmse_values['RMSE_translation_RL'], \
+                                'RMSE_translation_px': rmse_values['RMSE_translation_px'], \
+                                'RMSE_translation_mm': rmse_values['RMSE_translation_mm']}])
 
         scores_df = pd.concat([scores_df, new_row], ignore_index=True)
 
@@ -53,10 +57,12 @@ class Evaluation:
         avg_q_pos = scores_df['Q_pos'].mean()
         avg_q_pos_best = scores_df['Q_pos_Best'].mean()
         avg_rmse_rot = scores_df['RMSE_rot'].mean()
-        avg_rmse_translation = scores_df['RMSE_translation'].mean()
+        avg_rmse_translation_RL = scores_df['RMSE_translation_RL'].mean()
+        avg_rmse_translation_px = scores_df['RMSE_translation_px'].mean()
+        avg_rmse_translation_mm = scores_df['RMSE_translation_mm'].mean()
 
         # Placeholder for evaluation logic
-        return avg_q_pos, avg_q_pos_best, avg_rmse_rot, avg_rmse_translation
+        return avg_q_pos, avg_q_pos_best, avg_rmse_rot, geodesic_r, avg_rmse_translation_RL, avg_rmse_translation_px, avg_rmse_translation_mm
 
     def calculate_rmse(self, pieces, results, ground_truth, path_lists, transform_matrix, puzzle_info=None):
         # Load the CSV files into pandas DataFrames
@@ -122,7 +128,9 @@ class Evaluation:
             euclidean_distances_in_px = euclidean_distances_in_RL
         euclidean_distances_in_mm = euclidean_distances_in_px * pxls_to_m_scale                     # these are distances in millimeters (real values)
         # the RMSE error between the distances and zero (if the T_estimated are exactly the T_gt, dists are zero!)
-        RMSE_t = root_mean_squared_error(euclidean_distances_in_mm, np.zeros((N-1,1)))
+        RMSE_t_RL = root_mean_squared_error(euclidean_distances_in_RL, np.zeros((N-1,1)))
+        RMSE_t_px = root_mean_squared_error(euclidean_distances_in_px, np.zeros((N-1,1)))
+        RMSE_t_mm = root_mean_squared_error(euclidean_distances_in_mm, np.zeros((N-1,1)))
 
         # print("*" * 50)
         # print(f"Errors for {N-1} pieces")
@@ -189,7 +197,10 @@ class Evaluation:
 
         rmse_values = {
             'RMSE_rot': RMSE_r % 360,
-            'RMSE_translation': RMSE_t
+            'RMSE_translation_RL': RMSE_t_RL,
+            'RMSE_translation_px': RMSE_t_px,
+            'RMSE_translation_mm': RMSE_t_mm,
+
         }
 
         return rmse_values
