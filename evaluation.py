@@ -40,7 +40,8 @@ class Evaluation:
         q_pos_best = self.calculate_q_pos_option2(pieces, results, ground_truth, path_lists)
         q_pos = self.calculate_q_pos(pieces, results, ground_truth, path_lists)
         rmse_values = self.calculate_rmse(pieces, results, ground_truth, path_lists, transform_matrix, puzzle_info)
-        geodesic_r = 0 # TODO: calculate geodeisc loss (exists in github)
+        geodesic_r = 0 #self.calculate_geodesic_loss_R(pieces, results, ground_truth, path_lists, transform_matrix, puzzle_info)
+        # 0 # TODO: calculate geodeisc loss (exists in github)
 
         new_row = pd.DataFrame([{'object_name': 3, 'Q_pos': q_pos, 'Q_pos_Best': q_pos_best, \
                                 'RMSE_rot': rmse_values['RMSE_rot'],
@@ -302,6 +303,7 @@ class Evaluation:
                     result_area = self.calculate_area(rotated_image_canvases[piece_filename])
                     shared_area = self.calculate_shared_area(rotated_image_canvases[piece_filename],
                                                              gt_image_canvases[piece_filename])
+                                                             
                     partial_q_pos_score = piece_weight * (shared_area / result_area)
                     # partial_q_pos_score = shared_area
 
@@ -330,11 +332,10 @@ class Evaluation:
             # plt.show()
             # breakpoint()
 
-        q_pos_best = np.max(q_pos_pieces)
-        id_best = np.argmax(q_pos_pieces)
-
+        q_pos_best = np.nanmax(q_pos_pieces)
+        id_best = np.nanargmax(q_pos_pieces)
+        
         print(f"BEST Q_pos score: {q_pos_best} with reference piece {pieces[id_best]} ")
-
         return q_pos_best
 
     def calculate_q_pos(self, pieces, results, ground_truth, path_lists, log=False, debug=False):
