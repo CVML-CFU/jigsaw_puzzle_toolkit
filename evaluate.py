@@ -28,6 +28,7 @@ def main():
     RMSE_t_mm_list = []
     CM_type_list = []
     aggregation_type_list = []
+    initialization_list = []
     anchor_ids_list = []
     evaluated_test_set_puzzles_list = []
     exp_names_list = []
@@ -129,6 +130,7 @@ def main():
                         xy_num_points_list.append(params['grid_params']['xy_num_points'])
                         theta_num_points_list.append(params['grid_params']['theta_num_points'])
                         no_rotations_list.append(params['solver']['no_rotations'])
+                        initialization_list.append(params['solver']['grid']['method'])
                         anchor_ids_list.append(anchor_idx)
                         evaluated_test_set_puzzles_list.append(test_puzzle)
                         exp_names_list.append(experiment_run)
@@ -151,6 +153,7 @@ def main():
     # parameters used
     eval_df['CM'] = CM_type_list
     eval_df['Agg'] = aggregation_type_list
+    eval_df['P_init'] = initialization_list
     eval_df['anchor_id'] = anchor_ids_list
     eval_df['xy_num_points'] = xy_num_points_list
     eval_df['theta_num_points'] = theta_num_points_list
