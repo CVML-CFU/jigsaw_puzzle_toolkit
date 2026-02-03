@@ -462,7 +462,7 @@ class PuzzleGenerator:
 
         return pieces, sq_size
 
-    def extract_pieces(self, parameters):
+    def extract_pieces(self):
         """
         Extracts the pieces from the generated puzzle (either generated regions, or patterns map / polyomino below, as it has different center properties).
         It also handles rotations (depending on puzzle_type) and writes down the ground truth information
@@ -478,7 +478,7 @@ class PuzzleGenerator:
         for i in range(self.start_from, self.region_cnt):
             # 1. Extract the piece from the region
             piece_name = f"piece_{i:02d}"
-            mask_i = self.s == i
+            mask_i = self.region_mat == i
             if len(self.img.shape) > 2: 
                 image_i = self.img * np.repeat(mask_i, self.img.shape[2]).reshape(self.img.shape)
             else:
@@ -499,7 +499,7 @@ class PuzzleGenerator:
                 w_max = w_i   
             ## 2. Centering based on the center of mass
             centered_img = np.zeros_like(self.img)
-            centered_mask = np.zeros_like(mask_i)
+            centered_mask = np.zeros((self.img.shape[0], self.img.shape[1]))
             center_i = np.asarray([self.img.shape[0] / 2, self.img.shape[1] / 2])
             shift2center = (center_i - cm_i)#[::1]
             x0c = np.round(x0+shift2center[1]).astype(int)

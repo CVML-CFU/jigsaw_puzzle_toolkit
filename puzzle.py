@@ -155,17 +155,17 @@ class Puzzle:
         if self.input_type == 'repair' or self.input_type == 'json':
             input_path = os.path.join(root_path, 'data.json')
         self.input_path = input_path
-        if not puzzle_name:
-            puzzle_name = os.path.basename(input_path)
-        self.puzzle_name = puzzle_name
         self.puzzle_type = puzzle_type
         self.rotation_type = self.puzzle_type._rot()
         self.pieces_type = self.puzzle_type._type()
+        if not puzzle_name:
+            puzzle_name = os.path.basename(input_path)
+        self.puzzle_name = puzzle_name
         #self.output_path = output_path
         if not output_folder_name:
-            output_folder_name = os.path.basename(self.input_path)
+            output_folder_name = self.puzzle_name
         if self.input_type == 'image':
-            output_folder_name = output_folder_name.split(".")[0] # remove .jpg or .png
+            output_folder_name = f"{self.puzzle_type._type()}{self.puzzle_type._rot()}_{output_folder_name.split('.')[0]}" # remove .jpg or .png
         self.output_dir = os.path.join(output_path, output_folder_name)
         os.makedirs(self.output_dir, exist_ok=True)
         self.names = []
@@ -273,14 +273,15 @@ class Puzzle:
             self.pieces, self.patch_size = generator.extract_pieces()
             
         if self.pieces_type == 'M' and pattern_map_path is not None: # if shape == 'pattern'
-            patterns_map = cv2.imread(pattern_map_path)
+            patterns_map = cv2.imread(pattern_map_path, cv2.IMREAD_GRAYSCALE)
+            image = self.adapt_to_pattern_size(image, patterns_map)
             pattern_map, num_pieces = self.process_region_map(patterns_map)
             generator = PuzzleGenerator(image, parameters=parameters)
             generator.region_cnt = num_pieces + 1
             generator.region_mat = pattern_map # processed version 
             generator.save_jpg_regions(self.output_dir, skip_bg=True)
             parameters['start_from'] = 1
-            self.pieces, self.patch_size = generator.extract_pieces()
+            self.pieces, self.patch_size, self.gt = generator.extract_pieces()
 
         if self.pieces_type == 'P' and pattern_map_path is not None: # if shape == 'polyominos'
             region_map = cv2.imread(f"{pattern_map_path}.png", cv2.IMREAD_GRAYSCALE)
@@ -297,8 +298,10 @@ class Puzzle:
             parameters['start_from'] = 1
             generator.save_jpg_regions(self.output_dir, skip_bg=True)
             self.pieces, self.patch_size, self.gt = generator.get_polyomino_pieces_from_puzzle(parameters=parameters)
-            self.puzzle_info = generator.info()
-            self.puzzle_info['puzzle_image_size'] = image.shape 
+        
+        # they should be done for any kind of puzzle 
+        self.puzzle_info = generator.info()
+        self.puzzle_info['puzzle_image_size'] = image.shape 
 
     def prepare_puzzle_from_json(self, crop_pieces: bool = False, add_random_rotations: bool = False, theta_step: int = 45):
         """ Loads the data and handles the different use-cases. """
@@ -647,10 +650,11 @@ class Puzzle:
         else:
             for p_name in self.pieces.keys():
                 piece = self.pieces[p_name]
-                plt.imsave(os.path.join(images_out_dir, f"{p_name}.png"), piece['centered_image'][:,:,::-1])
+                # breakpoint()
+                plt.imsave(os.path.join(images_out_dir, f"{p_name}.png"), np.clip(piece['squared_image'][:,:,::-1], 0, 1))
                 # cv2.imwrite(os.path.join(images_out_dir, f"piece_{j:04d}.png"), np.round(piece['centered_image']*255).astype(np.uint8))
-                cv2.imwrite(os.path.join(bmasks_out_dir, f"mask_{p_name}.png"), piece['centered_mask'])
-                np.save(os.path.join(polygons_out_dir, f"polygon_{p_name}.png"), piece['centered_polygon'])
+                cv2.imwrite(os.path.join(bmasks_out_dir, f"mask_{p_name}.png"), piece['squared_mask'])
+                np.save(os.path.join(polygons_out_dir, f"polygon_{p_name}.png"), piece['squared_polygon'])
 
         with open(os.path.join(self.output_dir, "ground_truth.json"), 'w') as jf:
             json.dump(self.gt, jf, indent=2)
