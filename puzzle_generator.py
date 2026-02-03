@@ -81,7 +81,8 @@ class Vector:
 ##############################
 class PuzzleGenerator:
 
-    def __init__(self, img, img_name, pieces_centers=None, rotations_type:int=1):
+    def __init__(self, img, parameters:dict, pieces_centers=None):
+        #img_name:str, rotations_type:int, pieces_type:str, pieces_centers=None, ):
 
         self.img = img
         self.img_size = self.img.shape[:2] # Height, Width, Channel
@@ -90,18 +91,19 @@ class PuzzleGenerator:
         self.dilation_kernel_size = 51
 
         # name of the file without extension
-        self.name = img_name
-
+        self.name = parameters.get('name', "no_name")
+        self.padding = parameters.get('padding', 9)  #np.min(self.img.shape[:2]) // 30
+        self.rotation_range = parameters.get('rotation_range', 180)  
+        self.rotation_type = parameters.get('rotation_type', 1)  
+        self.rotation_type_description = parameters.get('rotation_type_s', "no rotation")  
+        self.pieces_type = parameters.get('pieces_type', "S")  
+        self.pieces_type_description = parameters.get('pieces_type_s', "squared")  
+        self.start_from = 0
+        if self.pieces_type == "M" or self.pieces_type == "P":
+            self.start_from = 1
         if pieces_centers is not None:
             self.pieces_centers = pieces_centers
-        # self.raw_regions = 'data/raw_regions/'
-        # if not os.path.exists(self.raw_regions):
-        #     os.mkdir(self.raw_regions)
 
-        # self.puzzle_folder = 'data/puzzles/'
-        # if not os.path.exists(self.puzzle_folder):
-        #     os.mkdir(self.puzzle_folder)
-        self.rotations_type = rotations_type
 
     def get_smooth_curve(self, x_len, x_pt_n, x_offset, y_offset, x_step):
 
@@ -371,8 +373,15 @@ class PuzzleGenerator:
         #     cut_puzzle_img = (puzzle_mask3c * self.img).astype(np.uint8)
         #     plt.imsave(os.path.join(regions_path, 'orig_image_cut.jpg'), cut_puzzle_img)
 
-
     def get_pieces_from_puzzle_v2(self, start_from=0):
+        """
+        Get the pieces from a `generated` puzzle. It does not handle rotation at the moment. 
+        Latest version @extract_pieces
+        ---------
+        2025 / 11
+        """
+        print("\nWARNING: DEPRECATED")
+        print("This is an older version of the code, the new method is called: `extract_pieces`, please use that for best results\n")
         pieces = []
         bg_mat = np.zeros_like(self.img)
         h_max = 0
@@ -453,14 +462,115 @@ class PuzzleGenerator:
 
         return pieces, sq_size
 
-    def get_polyomino_pieces_from_puzzle(self, start_from=0):
+    def extract_pieces(self, parameters):
+        """
+        Extracts the pieces from the generated puzzle (either generated regions, or patterns map / polyomino below, as it has different center properties).
+        It also handles rotations (depending on puzzle_type) and writes down the ground truth information
+        -------
+        2026 / 02
+        """
+        self.pieces = {}
+        self.gt = {} # as a list [x, y, theta]
+        bg_mat = np.zeros_like(self.img)
+        h_max = 0
+        w_max = 0
+        dist_cm_max = 0
+        for i in range(self.start_from, self.region_cnt):
+            # 1. Extract the piece from the region
+            piece_name = f"piece_{i:02d}"
+            mask_i = self.s == i
+            if len(self.img.shape) > 2: 
+                image_i = self.img * np.repeat(mask_i, self.img.shape[2]).reshape(self.img.shape)
+            else:
+                image_i = np.where(mask_i, self.img, bg_mat)
+            poly_i = get_polygon(mask_i)
+            cm_i = get_cm(mask_i)[::-1]
+            coords = np.argwhere(mask_i)
+            y0, x0 = coords.min(axis=0)
+            y1, x1 = coords.max(axis=0) + 1
+            h_i = y1-y0 
+            w_i = x1-x0 
+            dists_from_cm = np.linalg.norm(np.array(cm_i[::-1]) - np.array(poly_i.exterior.coords[:]), axis=1)
+            if np.max(dists_from_cm) > dist_cm_max:
+                dist_cm_max = np.max(dists_from_cm)
+            if h_i > h_max:
+                h_max = h_i 
+            if w_i > w_max:
+                w_max = w_i   
+            ## 2. Centering based on the center of mass
+            centered_img = np.zeros_like(self.img)
+            centered_mask = np.zeros_like(mask_i)
+            center_i = np.asarray([self.img.shape[0] / 2, self.img.shape[1] / 2])
+            shift2center = (center_i - cm_i)#[::1]
+            x0c = np.round(x0+shift2center[1]).astype(int)
+            x1c = np.round(x0c + w_i).astype(int)
+            y0c = np.round(y0+shift2center[0]).astype(int)
+            y1c = np.round(y0c + h_i).astype(int)
+            centered_img[y0c:y1c, x0c:x1c] = image_i[y0:y1, x0:x1]
+            centered_mask[y0c:y1c, x0c:x1c] = mask_i[y0:y1, x0:x1]
+            centered_poly = get_polygon(centered_mask)
+            ## 3. pieces in the dict
+            self.pieces[piece_name] = {
+                'mask': mask_i,
+                'centered_mask': centered_mask,
+                'image': image_i,
+                'centered_image': centered_img,
+                'polygon': poly_i,
+                'centered_polygon': centered_poly,
+                'center_of_mass': cm_i,
+                'height': h_i,
+                'width': w_i,
+                'shift2center': shift2center
+            }
+            self.gt[piece_name] = [float(cm_i[0]), float(cm_i[1]), 0]
+
+        # 4. Squared version of the pieces 
+        diam_dist_cm = int(dist_cm_max * 2)
+        self.sq_size = max(h_max, w_max, diam_dist_cm) + self.padding
+        # it should always be dist_cm_max which is the maximum radius from the center of mass 
+        # and is the radius of the circle where the piece can be included. Using this as the 
+        # size of the image guarantees that the piece does not go out of the square even during rotation
+        if self.sq_size % 2 > 0:
+            self.sq_size += 1 # keep square size even! :)
+        hsq = self.sq_size // 2
+        # remember center ordering!
+        from_idx = np.round(center_i-hsq).astype(int)
+        to_idx = np.round(center_i+hsq).astype(int)
+        for p_name in self.pieces.keys():
+            squared_img = np.zeros((self.sq_size, self.sq_size, 3))
+            squared_img = self.pieces[p_name]['centered_image'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1]]
+            squared_mask = self.pieces[p_name]['centered_mask'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1]]
+            # we remove the offset in the centered polygon to get it aligned
+            xoffset = - (self.img.shape[1]-self.sq_size) / 2   # half of the distance from the square to the shape of the image!
+            yoffset = - (self.img.shape[0]-self.sq_size) / 2
+            squared_poly = shapely.affinity.translate(self.pieces[p_name]['centered_polygon'], xoff=xoffset, yoff=yoffset)
+            # 5. handling rotations
+            if self.rotation_type > 1:
+                if self.rotation_type == 2: # 90 deg rotation
+                    degrees = np.round(np.random.uniform(0, 3)).astype(np.uint8) * 90
+                elif self.rotation_type == 3: # free deg rotation
+                    degrees = random.uniform(-self.rotation_range, self.rotation_range)
+                self.gt[p_name][2] = degrees
+                squared_img, squared_mask, squared_poly = self.rotate_piece(squared_img, squared_mask, squared_poly, degrees, method='ND')
+
+            self.pieces[p_name]['squared_image'] = squared_img
+            self.pieces[p_name]['squared_mask'] = squared_mask
+            self.pieces[p_name]['squared_polygon'] = squared_poly
+            self.pieces[p_name]['shift2square'] = np.asarray([xoffset, yoffset])
+
+        return self.pieces, self.sq_size, self.gt
+
+    def get_polyomino_pieces_from_puzzle(self, parameters):
         """
         This is very similar to the `get_pieces_from_puzzle_v2` method, but it uses the centers 
         (which were previously set when initializing the puzzle generator object)
-        and centers the pieces there. It's not in the cneter of mass of the piece,
+        and centers the pieces there. It's not in the center of mass of the piece,
         they are centered on one of the squares of the polyominos!
+        ----
+        2026 / 02
         """
-        pieces = []
+        self.pieces = {}
+        self.gt = {} # as a list [x, y, theta]
         square_side = self.img.shape[0]
         if square_side // 2 == 0:
             square_side += 1
@@ -468,20 +578,10 @@ class PuzzleGenerator:
         h_max = 0
         w_max = 0
         dist_cm_max = 0
-        padding = 3 #np.min(self.img.shape[:2]) // 30
-        for i in range(start_from, self.region_cnt):
+        for i in range(self.start_from, self.region_cnt):
+            # use keys!
+            piece_name = f"piece_{i:02d}"
             mask_i = self.region_mat == i
-            # breakpoint()
-            # plt.subplot(221)
-            # plt.imshow(self.region_mat)
-            # plt.subplot(222)
-            # plt.imshow(mask_i)
-            # plt.subplot(223)
-            # plt.imshow(self.img)
-            # plt.subplot(224)
-            # plt.imshow(self.region_mat - mask_i.astype(int)*i)
-            # plt.show()
-            # breakpoint()
             if len(self.img.shape) > 2: 
                 image_i = self.img * np.repeat(mask_i, self.img.shape[2]).reshape(self.img.shape)
             else:
@@ -502,7 +602,7 @@ class PuzzleGenerator:
             if w_i > w_max:
                 w_max = w_i     
 
-            ## centering
+            ## 2. Centering based on the center of mass
             centered_img = np.zeros((square_side, square_side, 3))
             centered_mask = np.zeros((square_side, square_side))
             center_i = np.asarray([self.img.shape[0] / 2, self.img.shape[1] / 2])
@@ -515,12 +615,8 @@ class PuzzleGenerator:
             centered_img[y0c:y1c, x0c:x1c] = image_i[y0:y1, x0:x1]
             centered_mask[y0c:y1c, x0c:x1c] = mask_i[y0:y1, x0:x1]
             centered_poly = get_polygon(centered_mask)
-            # plt.title(f"{y0c}, {y1c}, {x0c}, {x1c} // {y0}, {y1}, {x0}, {x1}")
-            # plt.imshow(centered_img)
-            # plt.plot(*(centered_poly.boundary.xy))
-            # plt.show()
-            # breakpoint()
-            pieces.append({
+            ## 3. pieces in the dict
+            self.pieces[piece_name] = {
                 'mask': mask_i,
                 'centered_mask': centered_mask,
                 'image': image_i,
@@ -531,171 +627,91 @@ class PuzzleGenerator:
                 'height': h_i,
                 'width': w_i,
                 'shift2center': shift2center
-            })
-        # put pieces inside a square 
+            }
+            self.gt[piece_name] = [float(cm_i[0]), float(cm_i[1]), 0]
+        # 4. Squared version of the pieces 
         diam_dist_cm = int(dist_cm_max * 2)
-        sq_size = max(h_max, w_max, diam_dist_cm) + padding
+        self.sq_size = max(h_max, w_max, diam_dist_cm) + self.padding
         # it should always be dist_cm_max which is the maximum radius from the center of mass 
         # and is the radius of the circle where the piece can be included. Using this as the 
         # size of the image guarantees that the piece does not go out of the square even during rotation
-        if sq_size % 2 > 0:
-            sq_size += 1 # keep square size even! :)
-        hsq = sq_size // 2
+        if self.sq_size % 2 > 0:
+            self.sq_size += 1 # keep square size even! :)
+        hsq = self.sq_size // 2
         # remember center ordering!
         from_idx = np.round(center_i-hsq).astype(int)
         to_idx = np.round(center_i+hsq).astype(int)
-        for i in range(len(pieces)):
-            squared_img = np.zeros((sq_size, sq_size, 3))
-            squared_img = pieces[i]['centered_image'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1]]
-            squared_mask = pieces[i]['centered_mask'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1]]
+        for p_name in self.pieces.keys():
+            squared_img = np.zeros((self.sq_size, self.sq_size, 3))
+            squared_img = self.pieces[p_name]['centered_image'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1]]
+            squared_mask = self.pieces[p_name]['centered_mask'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1]]
             # we remove the offset in the centered polygon to get it aligned
-            xoffset = - (self.img.shape[1]-sq_size) / 2   # half of the distance from the square to the shape of the image!
-            yoffset = - (self.img.shape[0]-sq_size) / 2
-            squared_poly = shapely.affinity.translate(pieces[i]['centered_polygon'], xoff=xoffset, yoff=yoffset)
-            pieces[i]['squared_image'] = squared_img
-            pieces[i]['squared_mask'] = squared_mask
-            pieces[i]['squared_polygon'] = squared_poly
-            pieces[i]['shift2square'] = np.asarray([xoffset, yoffset])
+            xoffset = - (self.img.shape[1]-self.sq_size) / 2   # half of the distance from the square to the shape of the image!
+            yoffset = - (self.img.shape[0]-self.sq_size) / 2
+            squared_poly = shapely.affinity.translate(self.pieces[p_name]['centered_polygon'], xoff=xoffset, yoff=yoffset)
+            if self.rotation_type > 1:
+                if self.rotation_type == 2: # 90 deg rotation
+                    degrees = np.round(np.random.uniform(0, 3)).astype(np.uint8) * 90
+                elif self.rotation_type == 3: # free deg rotation
+                    degrees = random.uniform(-self.rotation_range, self.rotation_range)
+                self.gt[p_name][2] = degrees
+                squared_img, squared_mask, squared_poly = self.rotate_piece(squared_img, squared_mask, squared_poly, degrees, method='ND')
 
-        return pieces, sq_size
+            self.pieces[p_name]['squared_image'] = squared_img
+            self.pieces[p_name]['squared_mask'] = squared_mask
+            self.pieces[p_name]['squared_polygon'] = squared_poly
+            self.pieces[p_name]['shift2square'] = np.asarray([xoffset, yoffset])
 
-    def get_pieces_from_puzzle(self):
+        return self.pieces, self.sq_size, self.gt
 
-        pieces = []
-        pieces_shapes = []
-        pieces_shapes_cropped = []
-        w_max = 0
-        h_max = 0
-        bg_mat = np.zeros_like(self.img)
+    def rotate_piece(self, squared_img, squared_mask, squared_poly, degrees, method='ND'):
+        """ Rotate a piece, including the mask and the polygon """
+        rot_origin = [squared_img.shape[0] // 2, squared_img.shape[1] // 2]
 
-        # Compute maximum boundary
-        for i in range(self.region_cnt):
+        if method == 'ND' or method == 'scipy':
+            rotated_square_img = ndimage.rotate(squared_img, degrees, reshape=False, mode='constant')
+            rotated_square_mask = ndimage.rotate(squared_mask, degrees, reshape=False, mode='constant')
+        elif method == 'OPENCV' or method == 'WARP':
+            # region_rot = ndimage.rotate(region_pad, degree, reshape=False, cval=bg_color)
+            rotation_mat = cv2.getRotationMatrix2D((squared_img.shape[1]/2, squared_img.shape[0]/2), degrees, 1)
+            rotated_square_img = cv2.warpAffine(squared_img, rotation_mat, rot_origin,
+                borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+            rotated_square_mask = cv2.warpAffine(squared_mask, rotation_mat, rot_origin,
+                borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+        rotated_square_poly = shapely.affinity.rotate(squared_poly, -degrees, origin=rot_origin)
+        return rotated_square_img, rotated_square_mask, rotated_square_poly
+        # plt.subplot(131); plt.imshow(squared_img); plt.title(f'will be rotated by {degree} degrees!')
+        # plt.subplot(132); plt.imshow(rotated_square_img_nd); plt.title('Rotated with SCIPY NDIMAGE')
+        # plt.subplot(133); plt.imshow(rotated_square_img); plt.title('Rotated with OPENCV')
+        # plt.show()
+        # breakpoint()
 
-            region_i = self.region_mat == i
-            #region_map3 = np.repeat(region_map, 3).reshape(self.img.shape)
-            image_region_i = np.where(region_i, self.img, bg_mat)
-            coords = np.argwhere(region_i)
-            y0, x0 = coords.min(axis=0)
-            y1, x1 = coords.max(axis=0) + 1
+    def info(self):
+        """ Creates a dictionary with the information about the puzzle and returns that """
+        info_d = {
+            'piece_size': self.sq_size,
+            'num_pieces': len(self.pieces),
+            'pieces_type': self.pieces_type,
+            'pieces_type_description': self.pieces_type_description,
+            'rotation_type': self.rotation_type ,
+            'rotation_type_description': self.rotation_type_description 
+        }
+        if self.gt is not None:
+            info_d['ground_truth_available'] = True 
+            info_d['ground_truth_format'] = 'x, y, theta (degrees)'
+        else:
+            info_d['ground_truth_available'] = False 
+        if 'mask' in self.pieces[list(self.pieces.keys())[0]]:
+            info_d['binary_masks_available'] = True
+        else:
+            info_d['binary_masks_available'] = False
+        if 'polygon' in self.pieces[list(self.pieces.keys())[0]]:
+            info_d['polygons_available'] = True
+        else:
+            info_d['polygons_available'] = False
 
-            image_region_i_cropped = image_region_i[y0:y1, x0:x1]
-            region_i_cropped = region_i[y0:y1, x0:x1]
-            pieces_shapes_cropped.append(image_region_i_cropped)
-            pieces_shapes.append(image_region_i)
-
-            #cm_i = get_cm(region_i)
-            cm_i_cropped = get_cm(region_i_cropped)
-            #shift2center = cm_i_cropped - ( np.asarray(region_i_cropped.shape[:2]) / 2 )
-            pieces.append({
-                'mask_orig': region_i,
-                'mask_cropped': region_i_cropped,
-                # 'mask_center': cm_i,
-                # 'mask_cropped_center': cm_i_cropped,
-                # 'shift2center_cropped': shift2center,
-                'img_cropped': self.img[y0:y1, x0:x1],
-                'corner_x':x0,
-                'corner_y':y0,
-                'height':y1-y0,
-                'width':x1-x0
-            })
-            w_max = max(w_max, x1 - x0)
-            h_max = max(h_max, y1 - y0)
-
-        diam = int(math.sqrt(w_max ** 2 + h_max ** 2) + 50)
-        # now we create the images
-        for i in range(self.region_cnt):
-
-            piece_padded = np.zeros((diam, diam))
-            piece_padded[0:pieces[i]['height'], 0:pieces[i]['width']] = pieces_shapes_cropped[i]
-            cm = get_cm(piece_padded)
-            center = np.asarray([diam / 2, diam / 2])
-            shift2center_frag = (center - cm)[::-1]
-            cm_i = get_cm(region_i)
-            center_i = np.asarray([self.img.shape[0] / 2, self.img.shape[1] / 2])
-            shift2center_img = (center_i - cm_i)[::-1]
-            piece_centered = np.zeros((diam, diam, 4))
-            mask_centered = np.zeros((diam, diam))
-            y0c = np.round(shift2center_frag[0]).astype(int)
-            y1c = np.round(shift2center_frag[0]+pieces[i]['height']).astype(int)
-            x0c = np.round(shift2center_frag[1]).astype(int)
-            x1c = np.round(shift2center_frag[1]+pieces[i]['width']).astype(int)
-            
-            # y0c = np.round((center[0]+shift2center[0]-pieces[i]['height']/2)).astype(int)
-            # y1c = np.round((center[0]+shift2center[0]+pieces[i]['height']/2)).astype(int)
-            # x0c = np.round((center[1]+shift2center[1]-pieces[i]['width']/2)).astype(int)
-            # x1c = np.round((center[1]+shift2center[1]+pieces[i]['width']/2)).astype(int)
-            # print('debug values')
-            # print(y0c, y1c, x0c, x1c, cm, center, shift2center, pieces[i]['height'], pieces[i]['width'])
-            # pdb.set_trace()
-
-            for h in range(3):
-                piece_centered[y0c:y1c, x0c:x1c, h] = pieces[i]['img_cropped']
-            
-            mask_centered[y0c:y1c, x0c:x1c] = pieces[i]['mask_cropped']
-            piece_centered[y0c:y1c, x0c:x1c, 3] = pieces[i]['mask_cropped'] * 255
-            pieces[i]['img'] = piece_centered
-            pieces[i]['mask'] = mask_centered
-            pieces[i]['shift2center_frag'] = shift2center_frag
-            pieces[i]['shift2center_img'] = shift2center_img
-            poly_orig = get_polygon(pieces[i]['mask_orig'])
-            pieces[i]['poly_orig'] = poly_orig
-            poly = get_polygon(mask_centered)
-            pieces[i]['poly_centered'] = poly
-
-        return pieces
-
-            # pad_top = (diam - pieces_shapes_cropped[i].shape[0]) // 2
-            # pad_left = (diam - pieces_shapes_cropped[i].shape[1]) // 2
-            # pad_bottom = diam - pieces_shapes_cropped[i].shape[0] - pad_top
-            # pad_right = diam - pieces_shapes_cropped[i].shape[1] - pad_left
-
-            # print('debug values')
-            # print(pad_top, pad_left, pad_bottom, pad_right, pieces_shapes_cropped[i].shape, diam)
-            # piece_padded = np.zeros((diam, diam))
-            # shift_y, shift_x = np.round(pieces[i]['shift2center_cropped']).astype(int)
-            # piece_padded[pad_bottom+shift_y:diam - pad_top+shift_y, pad_left+shift_x:diam - pad_right+shift_x] = pieces_shapes_cropped[i]
-            # piece_padded2 = np.zeros((diam, diam))
-            # shift_y, shift_x = - np.round(pieces[i]['shift2center_cropped']).astype(int)
-            # piece_padded2[pad_bottom+shift_y:diam - pad_top+shift_y, pad_left+shift_x:diam - pad_right+shift_x] = pieces_shapes_cropped[i]
-            # piece_padded3 = np.zeros((diam, diam))
-            # piece_padded3[pad_bottom:diam - pad_top, pad_left:diam - pad_right] = pieces_shapes_cropped[i]
-            # plt.subplot(221)
-            # plt.title(f"shift + {get_cm(piece_padded)} // {(diam / 2):.02f}")
-            # plt.imshow(piece_padded)
-            # plt.subplot(222)
-            # plt.title(f"shift - {get_cm(piece_padded2)} // {(diam / 2):.02f}")
-            # plt.imshow(piece_padded2)
-            # plt.subplot(223)
-            # plt.title(f"no shift {get_cm(piece_padded3)} // {(diam / 2):.02f}")
-            # plt.imshow(piece_padded3)
-            # plt.subplot(224)
-            # plt.title(f"new method {get_cm(mask_centered)} // {(diam / 2):.02f}")
-            # plt.imshow(mask_centered)
-            # plt.show()
-            # pdb.set_trace()
-
-            # piece_padded = cv2.copyMakeBorder(pieces_shapes_cropped[i],
-            #     pad_top, pad_bottom, pad_left, pad_right, cv2.BORDER_CONSTANT, value=bg_color)
-            # pieces[i]['img'] = piece_padded
-            # pieces[i]['padding'] = [pad_top, pad_left, pad_bottom, pad_right]
-
-        
-    # def compute_maximum_boundaries(self, bg_mat):
-        
-    #     # Compute maximum boundary
-    #     for i in range(self.region_cnt):
-
-    #         region_map = self.region_mat == i
-    #         region_map3 = np.repeat(region_map, 3).reshape(self.img.shape)
-    #         rgb = np.where(region_map3, self.img, bg_mat)
-
-    #         coords = np.argwhere(region_map)
-    #         y0, x0 = coords.min(axis=0)
-    #         y1, x1 = coords.max(axis=0) + 1
-
-    #         self.w_max = max(w_max, x1 - x0)
-    #         self.h_max = max(h_max, y1 - y0)
-
+        return info_d   
+     
     def save_puzzle(self, iter, bg_color, save_regions=False):
 
         pdb.set_trace()

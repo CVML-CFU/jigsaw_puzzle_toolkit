@@ -54,8 +54,34 @@ class PuzzleType(Enum):
     def _rot(self): # the rotations 1 --> no rotation, 2 --> 90 deg rotations, 3 --> free rotations
         return int(self.value[-1])
     
+    def _rot_str(self):
+        rot_type_as_int = int(self.value[-1]) 
+        if rot_type_as_int == 1:
+            rot_str = 'no rotations'
+        elif rot_type_as_int == 2:
+            rot_str = 'rotations multiple of 90 degrees'
+        elif rot_type_as_int == 3:
+            rot_str = 'free rotations (float values)'
+        else:
+            rot_str = 'unknown rotations'
+        return rot_str
+
     def _type(self): # the letter corresponding to the type
         return self.value[0]
+
+    def _type_str(self):
+        if self.value[0] == 'S':
+            type_str = "squared pieces"
+        elif self.value[0] == 'P':
+            type_str = "polyominoes pieces"
+        elif self.value[0] == 'M':
+            type_str = "pattern map pieces"
+        elif self.value[0] == 'I':
+            type_str = "irregular pieces"
+        else:
+            type_str = "unknown"
+        return type_str
+    
 
 # @staticmethod
 def extract_binary_mask(irregular_image: np.ndarray, background: int = 0, close: bool = True):
@@ -134,6 +160,7 @@ class Puzzle:
         self.puzzle_name = puzzle_name
         self.puzzle_type = puzzle_type
         self.rotation_type = self.puzzle_type._rot()
+        self.pieces_type = self.puzzle_type._type()
         #self.output_path = output_path
         if not output_folder_name:
             output_folder_name = os.path.basename(self.input_path)
@@ -218,24 +245,44 @@ class Puzzle:
         it uses the parameters given in the creation of the Puzzle object
         """
         image = cv2.imread(self.input_path)
+        parameters = {
+            'name': self.puzzle_name,
+            'num_pieces': num_pieces,
+            'pattern_map_path': pattern_map_path,
+            'padding': 9,
+            'rotation_type': self.puzzle_type._rot(),
+            'rotation_type_s': self.puzzle_type._rot_str(),
+            'pieces_type': self.puzzle_type._type(),
+            'pieces_type_s': self.puzzle_type._type_str(),
+            'rotation_range': 180
+        }
+        # np.savetxt(os.path.join(self.output_dir, "random_rot.txt"), np.asarray(self.random_rotations))
+        # np.savetxt(os.path.join(self.output_dir, "ground_truth.txt"), np.asarray(self.positions))
+        # with open(os.path.join(self.output_dir, "ground_truth.json"), 'w') as jf:
+        #     json.dump(self.gt, jf, indent=2)
+        # with open(os.path.join(self.output_dir, "puzzle_info.json"), 'w') as jf:
+        #     json.dump(self.puzzle_info, jf, indent=2)
 
-        if self.puzzle_type._type() == 'I': # == 'irregular':
-            generator = PuzzleGenerator(image, self.puzzle_name, self.rotation_type)
-            generator.run(num_pieces, offset_rate_h=0.2, offset_rate_w=0.2, small_region_area_ratio=0.25, rot_range=0,
+        if self.pieces_type == 'I': # == 'irregular':
+            generator = PuzzleGenerator(image, parameters=parameters)
+            # generator.generate_regions(puzzle_parameters, save_image=True)
+            generated_puzzle = generator.run(num_pieces, offset_rate_h=0.2, offset_rate_w=0.2, small_region_area_ratio=0.25, rot_range=0,
                 smooth_flag=True, alpha_channel=True, perc_missing_fragments=0, erosion=0, borders=False)
             generator.save_jpg_regions(self.output_dir, skip_bg=False)
-            self.pieces, self.patch_size = generator.get_pieces_from_puzzle_v2(start_from=0)
+            parameters['start_from'] = 0
+            self.pieces, self.patch_size = generator.extract_pieces()
             
-        if self.puzzle_type._type() == 'M' and pattern_map_path is not None: # if shape == 'pattern'
+        if self.pieces_type == 'M' and pattern_map_path is not None: # if shape == 'pattern'
             patterns_map = cv2.imread(pattern_map_path)
             pattern_map, num_pieces = self.process_region_map(patterns_map)
-            generator = PuzzleGenerator(image, self.puzzle_name, self.rotation_type)
+            generator = PuzzleGenerator(image, parameters=parameters)
             generator.region_cnt = num_pieces + 1
             generator.region_mat = pattern_map # processed version 
             generator.save_jpg_regions(self.output_dir, skip_bg=True)
-            self.pieces, self.patch_size = generator.get_pieces_from_puzzle_v2(start_from=1)
+            parameters['start_from'] = 1
+            self.pieces, self.patch_size = generator.extract_pieces()
 
-        if self.puzzle_type._type() == 'P' and pattern_map_path is not None: # if shape == 'polyominos'
+        if self.pieces_type == 'P' and pattern_map_path is not None: # if shape == 'polyominos'
             region_map = cv2.imread(f"{pattern_map_path}.png", cv2.IMREAD_GRAYSCALE)
             print("pattern map: ", pattern_map_path)
             with open(f"{pattern_map_path}.json", 'r') as jc:
@@ -243,22 +290,15 @@ class Puzzle:
             
             image = self.adapt_to_pattern_size(image, region_map)
             pattern_map, num_pieces = self.process_region_map(region_map)
-            generator = PuzzleGenerator(image, self.puzzle_name, pieces_centers=pieces_centers, rotations_type=self.rotation_type)
+            generator = PuzzleGenerator(image, parameters=parameters, pieces_centers=pieces_centers)
             generator.region_cnt = num_pieces + 1
             generator.region_mat = pattern_map # processed version 
             # breakpoint()
+            parameters['start_from'] = 1
             generator.save_jpg_regions(self.output_dir, skip_bg=True)
-            self.pieces, self.patch_size = generator.get_polyomino_pieces_from_puzzle(start_from=1)
-
-        # breakpoint()
-
-        # self.puzzle_info['pieces_image_size'] = self.images[0].shape
-        # self.puzzle_info['binary_masks_available'] = True
-        # self.puzzle_info['polygons_available'] = True
-        # self.puzzle_info['ground_truth_available'] = True
-        # self.puzzle_info['max_dist_from_center'] = np.ceil(self.max_enclosing_radius).astype(float)
-        # self.puzzle_info['padding'] = self.padding
-        # self.puzzle_info['rescaling_factor'] = rescaling_factor
+            self.pieces, self.patch_size, self.gt = generator.get_polyomino_pieces_from_puzzle(parameters=parameters)
+            self.puzzle_info = generator.info()
+            self.puzzle_info['puzzle_image_size'] = image.shape 
 
     def prepare_puzzle_from_json(self, crop_pieces: bool = False, add_random_rotations: bool = False, theta_step: int = 45):
         """ Loads the data and handles the different use-cases. """
@@ -603,22 +643,20 @@ class Puzzle:
                 # for name, image, bmask, polygon in zip(self.names, self.images, self.masks, self.polygons):
                 plt.imsave(os.path.join(images_out_dir, f"{frag_data['idx']}_{frag_data['name']}.png"), frag_data['image'])
                 cv2.imwrite(os.path.join(bmasks_out_dir, f"{frag_data['idx']}_{frag_data['name']}.png"), frag_data['mask'])
-                np.save(os.path.join(polygons_out_dir, f"{frag_data['idx']}_{frag_data['name']}"), frag_data['polygon'])
+                np.save(os.path.join(polygons_out_dir, f"{frag_data['idx']}_{frag_data['name'][:-4]}"), frag_data['polygon'])
         else:
-            for j, piece in enumerate(self.pieces):
-                # for name, image, bmask, polygon in zip(self.names, self.images, self.masks, self.polygons):
-                # breakpoint()
-                plt.imsave(os.path.join(images_out_dir, f"piece_{j:03d}.png"), piece['centered_image'])
-                cv2.imwrite(os.path.join(bmasks_out_dir, f"mask_p_{j:03d}.png"), piece['centered_mask'])
-                np.save(os.path.join(polygons_out_dir, f"polygon_p_{j:03d}.png"), piece['centered_polygon'])
+            for p_name in self.pieces.keys():
+                piece = self.pieces[p_name]
+                plt.imsave(os.path.join(images_out_dir, f"{p_name}.png"), piece['centered_image'][:,:,::-1])
+                # cv2.imwrite(os.path.join(images_out_dir, f"piece_{j:04d}.png"), np.round(piece['centered_image']*255).astype(np.uint8))
+                cv2.imwrite(os.path.join(bmasks_out_dir, f"mask_{p_name}.png"), piece['centered_mask'])
+                np.save(os.path.join(polygons_out_dir, f"polygon_{p_name}.png"), piece['centered_polygon'])
 
-        np.savetxt(os.path.join(self.output_dir, "random_rot.txt"), np.asarray(self.random_rotations))
-        np.savetxt(os.path.join(self.output_dir, "ground_truth.txt"), np.asarray(self.positions))
         with open(os.path.join(self.output_dir, "ground_truth.json"), 'w') as jf:
             json.dump(self.gt, jf, indent=2)
         with open(os.path.join(self.output_dir, "puzzle_info.json"), 'w') as jf:
             json.dump(self.puzzle_info, jf, indent=2)
-
+        np.savetxt(os.path.join(self.output_dir, "ground_truth.txt"), np.asarray(list(self.gt.values())))
         print("Done!")
 
     def show_piece(self, index: int = 0):
