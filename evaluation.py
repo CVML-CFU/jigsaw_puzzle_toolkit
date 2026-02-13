@@ -2,11 +2,14 @@ import pandas as pd
 import numpy as np
 import math
 
+from geodesic_loss import GeodesicLoss
+
 from PIL import Image
 
 class Evaluation:
     def __init__(self):
         self._img_cache: dict[str, Image.Image] = {}
+        self.g_loss = GeodesicLoss(reduction='none')
         pass
 
     def _get_img(self, pid: str, path_lists: dict[str, str]) -> Image.Image:
@@ -88,6 +91,9 @@ class Evaluation:
 
         rmse_rot = 1 / np.sqrt(2) * np.average(
             np.sqrt((merged_df['rot_result'] % 360 - merged_df['rot_gt'] % 360) ** 2))
+
+        breakpoint()
+        geodesic_loss = self.g_loss()
 
         rmse_values = {
             'RMSE_rot': rmse_rot % 360,
