@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import math
+from sklearn.metrics import root_mean_squared_error
 
 from geodesic_loss import GeodesicLoss
 
@@ -19,7 +20,7 @@ class Evaluation:
             self._img_cache[pid] = img
         return img
 
-    def evaluate(self, pieces, results, ground_truth, path_lists):
+    def evaluate(self, pieces, results, ground_truth, path_lists, transform_matrix, puzzle_info):
         """
         pieces is a list of pieces to evaluate
         results and ground_truth are two dictionary with the following keys:
@@ -27,36 +28,47 @@ class Evaluation:
             - a list corresponds to the piece id which gives the position in form of [x, y, theta]
         path_lists is a dictionary with the normalized id and the path to the corresponding image (.png)
         """
-
         results_org = results.copy()
         ground_truth_org = ground_truth.copy()
 
-        ground_truth, results = self.normalize_results_and_ground_truth(results, ground_truth)
+        largest_piece = self.find_largest_fragment(pieces, path_lists)
+        print(largest_piece)
 
-        scores_df = pd.DataFrame(columns=['object_name', 'Q_pos', 'RMSE_rot', 'RMSE_translation'])
+        ground_truth, results = self.normalize_results_and_ground_truth(results, ground_truth, largest_piece)
+
+        scores_df = pd.DataFrame(columns=['object_name', 'Q_pos', 'Q_pos_Best', 'RMSE_rot', 'RMSE_translation'])
 
         # for piece in pieces:
 
-        q_pos = 0
+        q_pos_best = self.calculate_q_pos_option2(pieces, results, ground_truth, path_lists)
         q_pos = self.calculate_q_pos(pieces, results, ground_truth, path_lists)
-        rmse_value = self.calculate_rmse(pieces, results, ground_truth, path_lists)
+        rmse_values = self.calculate_rmse(pieces, results, ground_truth, path_lists, transform_matrix, puzzle_info)
+        geodesic_r = 0 #self.calculate_geodesic_loss_R(pieces, results, ground_truth, path_lists, transform_matrix, puzzle_info)
+        # 0 # TODO: calculate geodeisc loss (exists in github)
 
-        new_row = pd.DataFrame([{'object_name': 3, 'Q_pos': q_pos, 'RMSE_rot': rmse_value['RMSE_rot'],
-                                 'RMSE_translation': rmse_value['RMSE_translation']}])
+        new_row = pd.DataFrame([{'object_name': 3, 'Q_pos': q_pos, 'Q_pos_Best': q_pos_best, \
+                                'RMSE_rot': rmse_values['RMSE_rot'],
+                                'RMSE_translation_RL': rmse_values['RMSE_translation_RL'], \
+                                'RMSE_translation_px': rmse_values['RMSE_translation_px'], \
+                                'RMSE_translation_mm': rmse_values['RMSE_translation_mm']}])
 
         scores_df = pd.concat([scores_df, new_row], ignore_index=True)
 
         # fill in blank values with 0
         scores_df.fillna(0, inplace=True)
 
+        ## why we need ".mean()" ?
         avg_q_pos = scores_df['Q_pos'].mean()
+        avg_q_pos_best = scores_df['Q_pos_Best'].mean()
         avg_rmse_rot = scores_df['RMSE_rot'].mean()
-        avg_rmse_translation = scores_df['RMSE_translation'].mean()
+        avg_rmse_translation_RL = scores_df['RMSE_translation_RL'].mean()
+        avg_rmse_translation_px = scores_df['RMSE_translation_px'].mean()
+        avg_rmse_translation_mm = scores_df['RMSE_translation_mm'].mean()
 
         # Placeholder for evaluation logic
-        return avg_q_pos, avg_rmse_rot, avg_rmse_translation
+        return avg_q_pos, avg_q_pos_best, avg_rmse_rot, geodesic_r, avg_rmse_translation_RL, avg_rmse_translation_px, avg_rmse_translation_mm
 
-    def calculate_rmse(self, pieces, results, ground_truth, path_lists, pxls_to_m_scaler = (1/7.369)):
+    def calculate_rmse(self, pieces, results, ground_truth, path_lists, transform_matrix, puzzle_info=None):
         # Load the CSV files into pandas DataFrames
         result_data = []
         gt_data = []
@@ -85,22 +97,252 @@ class Evaluation:
         merged_df['y_result'] = merged_df['y_result'] + additional_transformation['y']
         merged_df['rot_result'] = (merged_df['rot_result'] + additional_transformation['rot']) % 360
 
-        rmse_translation = np.average(np.sqrt((merged_df['x_result'] - merged_df['x_gt']) ** 2 +
-                                              (merged_df['y_result'] - merged_df[
-                                                  'y_gt']) ** 2) * pxls_to_m_scaler) * 1 / np.sqrt(2)
+        
 
-        rmse_rot = 1 / np.sqrt(2) * np.average(
-            np.sqrt((merged_df['rot_result'] % 360 - merged_df['rot_gt'] % 360) ** 2))
+        ##############################################################################################
+        #                                                                                            #
+        # ████████╗██████╗  █████╗ ███╗   ██╗███████╗██╗      █████╗ ████████╗██╗ ██████╗ ███╗   ██╗ #
+        # ╚══██╔══╝██╔══██╗██╔══██╗████╗  ██║██╔════╝██║     ██╔══██╗╚══██╔══╝██║██╔═══██╗████╗  ██║ #
+        #    ██║   ██████╔╝███████║██╔██╗ ██║███████╗██║     ███████║   ██║   ██║██║   ██║██╔██╗ ██║ #
+        #    ██║   ██╔══██╗██╔══██║██║╚██╗██║╚════██║██║     ██╔══██║   ██║   ██║██║   ██║██║╚██╗██║ #
+        #    ██║   ██║  ██║██║  ██║██║ ╚████║███████║███████╗██║  ██║   ██║   ██║╚██████╔╝██║ ╚████║ #
+        #    ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝ #
+        #                                                                                            #
+        ##############################################################################################
+
+        ####
+        # RMSE according to "standard" knowledge
+        # it may be different from the neurips paper
+        ####
+        pxls_to_m_scale = transform_matrix[0][0]
+        N = len(pieces)
+
+        T_estimated = np.zeros((N-1, 2)) # 1 piece is the reference, so no error
+        T_estimated[:,0] = merged_df['x_result'].values
+        T_estimated[:,1] = merged_df['y_result'].values
+
+        T_gt = np.zeros((N-1, 2)) # 1 piece is the reference, so excluded
+        T_gt[:,0] = merged_df['x_gt'].values
+        T_gt[:,1] = merged_df['y_gt'].values
+
+        euclidean_distances_in_RL = np.linalg.norm(T_estimated - T_gt, axis=1, ord=2)               # these are the distances in our "resized" images
+        if puzzle_info is not None:
+            euclidean_distances_in_px = euclidean_distances_in_RL * puzzle_info['rescaling_factor']     # these are distances in the pixel space (rendered one)
+        else:
+            euclidean_distances_in_px = euclidean_distances_in_RL
+        euclidean_distances_in_mm = euclidean_distances_in_px * pxls_to_m_scale                     # these are distances in millimeters (real values)
+        # the RMSE error between the distances and zero (if the T_estimated are exactly the T_gt, dists are zero!)
+        RMSE_t_RL = root_mean_squared_error(euclidean_distances_in_RL, np.zeros((N-1,1)))
+        RMSE_t_px = root_mean_squared_error(euclidean_distances_in_px, np.zeros((N-1,1)))
+        RMSE_t_mm = root_mean_squared_error(euclidean_distances_in_mm, np.zeros((N-1,1)))
+
+        # print("*" * 50)
+        # print(f"Errors for {N-1} pieces")
+        # print(f"ED_RL: {euclidean_distances_in_RL}")
+        # print(f"ED_px: {euclidean_distances_in_px}")
+        # print(f"ED_mm: {euclidean_distances_in_mm}")
+        # print("-" * 50)
+        # print(f"RMSE (t): {RMSE_t}")
+        # print("*" * 50)
+        # breakpoint()
+
+        # print("lib RMSE")
+        # print(RMSE_t)
+
+        ############################################
+        # This gives the correct result, but using libraries seemed the best way 
+        ############################################
+        # err_dist = np.sqrt((merged_df['x_result'] - merged_df['x_gt']) ** 2 + (merged_df['y_result'] - merged_df['y_gt']) ** 2)  * pxls_to_m_scale 
+        # rmse_translation_v2 = np.sqrt(np.average(err_dist**2))
+
+        # print("new RMSE second version")
+        # print(rmse_translation_v2)
+        ############################################
+
+        ############################################
+        # OLD VERSION 
+        # probably not correct! 
+        # gives different value
+        # rmse_translation = np.average(np.sqrt((merged_df['x_result'] - merged_df['x_gt']) ** 2 +
+        #                                       (merged_df['y_result'] - merged_df[
+        #                                           'y_gt']) ** 2) * pxls_to_m_scale) * 1 / np.sqrt(2)
+        # print("old RMSE")
+        # print(rmse_translation)
+        # breakpoint()
+        ############################################
+
+        
+
+        #####################################################################
+        #                                                                   #
+        # ██████╗  ██████╗ ████████╗ █████╗ ████████╗██╗ ██████╗ ███╗   ██╗ #
+        # ██╔══██╗██╔═══██╗╚══██╔══╝██╔══██╗╚══██╔══╝██║██╔═══██╗████╗  ██║ #
+        # ██████╔╝██║   ██║   ██║   ███████║   ██║   ██║██║   ██║██╔██╗ ██║ #
+        # ██╔══██╗██║   ██║   ██║   ██╔══██║   ██║   ██║██║   ██║██║╚██╗██║ #
+        # ██║  ██║╚██████╔╝   ██║   ██║  ██║   ██║   ██║╚██████╔╝██║ ╚████║ #
+        # ╚═╝  ╚═╝ ╚═════╝    ╚═╝   ╚═╝  ╚═╝   ╚═╝   ╚═╝ ╚═════╝ ╚═╝  ╚═══╝ #
+        #                                                                   #
+        #####################################################################
+        R_estimated = np.zeros((N-1, 1)) # 1 piece is the reference, so no error
+        R_estimated[:,0] = merged_df['rot_result'].values
+
+        R_gt = np.zeros((N-1, 1)) # 1 piece is the reference, so excluded
+        R_gt[:,0] = merged_df['rot_gt'].values
+
+        euclidean_distances_rotations = np.linalg.norm(R_estimated - R_gt, axis=1, ord=2)
+        # the RMSE error between the distances and zero (if the T_estimated are exactly the T_gt, dists are zero!)
+        RMSE_r = root_mean_squared_error(euclidean_distances_rotations, np.zeros((N-1,1)))
+
+        # OLD VERSION
+        # rmse_rot = 1 / np.sqrt(2) * np.average(
+        #     np.sqrt((merged_df['rot_result'] % 360 - merged_df['rot_gt'] % 360) ** 2))
+
+        # print(f"RMSE R: \n\tlib: {RMSE_r}\n\told: {rmse_rot}")
 
         breakpoint()
         geodesic_loss = self.g_loss()
 
         rmse_values = {
-            'RMSE_rot': rmse_rot % 360,
-            'RMSE_translation': rmse_translation
+            'RMSE_rot': RMSE_r % 360,
+            'RMSE_translation_RL': RMSE_t_RL,
+            'RMSE_translation_px': RMSE_t_px,
+            'RMSE_translation_mm': RMSE_t_mm,
+
         }
 
         return rmse_values
+
+    def calculate_q_pos_option2(self, pieces, results, ground_truth, path_lists, log=False, debug=False):
+        """
+           Calculates the score of the placement of the pieces on the shared canvas.
+
+           ::param pieces_dir: the directory containing the pieces
+           ::param transformations_dir: the csv file containing the result transformations
+           ::param gt_transformations_dir: the csv file containing the ground truth transformations
+           ::param log: whether to print the intermediate results or not
+           """
+
+        transformations_df = self.read_transformations(pieces, results)
+        transformations_non_negative = self.read_transformations(pieces, results, make_non_negative=True)
+        gt_transformations_df = self.read_transformations(pieces, ground_truth)
+
+        # Initialize the shared canvas with the largest piece
+        shared_canvas_width, shared_canvas_height = self.calculate_shared_canvas_size(pieces, transformations_df,
+                                                                                      gt_transformations_df, path_lists)
+
+        #pieces_weights = self.calculate_pieces_weights(pieces, path_lists, exclude_largest_piece=False)
+
+        q_pos_pieces = np.zeros(len(pieces))
+        #for piece_id in pieces:
+        for i in range(len(pieces)):
+            piece_id = pieces[i]
+            additional_transformation = self.get_transformation_for_largest_piece(pieces, transformations_df,
+                                                                                  gt_transformations_df, path_lists, largest_piece=piece_id)
+
+            additional_x = additional_x_for_gt = additional_y = additional_y_for_gt = 0
+            if additional_transformation['x'] < 0:
+                additional_x_for_gt = abs(additional_transformation['x'])
+            else:
+                additional_x = additional_transformation['x']
+            if additional_transformation['y'] < 0:
+                additional_y_for_gt = abs(additional_transformation['y'])
+            else:
+                additional_y = additional_transformation['y']
+
+            additional_rot = additional_transformation['rot']
+
+            pieces_weights = self.calculate_pieces_weights(pieces, path_lists, exclude_largest_piece=True, largest_piece=additional_transformation['largest_piece_name'])
+            q_pos = 0
+            total_area = 0
+
+            image_canvases = {}
+            gt_image_canvases = {}
+
+            # Apply the transformations on all the pieces then place them on the shared canvas
+            solution_canvas_for_debug = Image.new('RGBA', (shared_canvas_width, shared_canvas_height), (0, 0, 0, 0))
+            gt_canvas_for_debug = Image.new('RGBA', (shared_canvas_width, shared_canvas_height), (0, 0, 0, 0))
+            for index, row in transformations_non_negative.iterrows():
+                piece_filename = row['rpf']
+                x = int(row['x'])
+                y = int(row['y'])
+                rot = row['rot']
+                gt_x = int(gt_transformations_df[gt_transformations_df['rpf'] == piece_filename].iloc[0]['x'])
+                gt_y = int(gt_transformations_df[gt_transformations_df['rpf'] == piece_filename].iloc[0]['y'])
+                gt_rot = int(gt_transformations_df[gt_transformations_df['rpf'] == piece_filename].iloc[0]['rot'])
+
+                piece_img = self._get_img(piece_filename, path_lists)
+
+                new_piece = self.apply_transformations_on_piece(piece_img, x, y, rot, additional_x, additional_y)
+                new_canvas = Image.new('RGBA', (shared_canvas_width, shared_canvas_height), (0, 0, 0, 0))
+                new_canvas.alpha_composite(new_piece)
+                solution_canvas_for_debug.alpha_composite(new_piece)
+                image_canvases[piece_filename] = new_canvas
+
+                gt_new_piece = self.apply_transformations_on_piece(piece_img, gt_x, gt_y, gt_rot, additional_x_for_gt,
+                                                                   additional_y_for_gt)
+                new_gt_canvas = Image.new('RGBA', (shared_canvas_width, shared_canvas_height), (0, 0, 0, 0))
+                new_gt_canvas.alpha_composite(gt_new_piece)
+                gt_canvas_for_debug.alpha_composite(gt_new_piece)
+                gt_image_canvases[piece_filename] = new_gt_canvas
+
+            rotated_image_canvases = {}
+            largest_piece = image_canvases[f'{additional_transformation["largest_piece_name"]}']
+
+
+            non_alpha_bbox = Image.fromarray(np.array(largest_piece)[:, :, 3]).getbbox()
+            center_x = (non_alpha_bbox[2] + non_alpha_bbox[0]) / 2
+            center_y = (non_alpha_bbox[3] + non_alpha_bbox[1]) / 2
+            rotated_largest_piece = largest_piece.rotate(additional_rot, expand=True, center=(center_x, center_y))
+            rotated_image_canvases[f'{additional_transformation["largest_piece_name"]}'] = rotated_largest_piece
+            for piece_filename in image_canvases:
+                if piece_filename == f'{additional_transformation["largest_piece_name"]}':
+                    continue
+                else:
+                    piece = image_canvases[piece_filename]
+                    rotated_piece = piece.rotate(additional_rot, expand=True, center=(center_x, center_y))
+                    rotated_image_canvases[piece_filename] = rotated_piece
+
+            # Calculate the Q_pos score
+            for piece_filename in image_canvases:
+                if piece_filename != f'{additional_transformation["largest_piece_name"]}':
+                    piece_weight = pieces_weights[piece_filename]
+                    result_area = self.calculate_area(rotated_image_canvases[piece_filename])
+                    shared_area = self.calculate_shared_area(rotated_image_canvases[piece_filename],
+                                                             gt_image_canvases[piece_filename])
+                                                             
+                    partial_q_pos_score = piece_weight * (shared_area / result_area)
+                    # partial_q_pos_score = shared_area
+
+                    if log:
+                        print(f"Piece: {piece_filename}")
+                        print(f"Piece weight: {piece_weight}")
+                        print(f"Result area: {result_area}")
+                        print(f"Shared area: {shared_area}")
+                        print(f"Partial Q_pos score: {partial_q_pos_score}")
+                    # total_area += result_area
+                    q_pos += partial_q_pos_score
+
+            if log:
+                print(f"Q_pos score for piece {piece_id}: {q_pos}")
+
+            q_pos_pieces[i] = q_pos
+
+
+            # import matplotlib.pyplot as plt
+            # plt.figure()
+            # plt.suptitle(f"Q_pos: {(q_pos):.03f}")
+            # plt.subplot(121); plt.title("SOLUTION")
+            # plt.imshow(np.array(solution_canvas_for_debug))
+            # plt.subplot(122); plt.title('GT')
+            # plt.imshow(np.array(gt_canvas_for_debug))
+            # plt.show()
+            # breakpoint()
+
+        q_pos_best = np.nanmax(q_pos_pieces)
+        id_best = np.nanargmax(q_pos_pieces)
+        
+        print(f"BEST Q_pos score: {q_pos_best} with reference piece {pieces[id_best]} ")
+        return q_pos_best
 
     def calculate_q_pos(self, pieces, results, ground_truth, path_lists, log=False, debug=False):
         """
@@ -138,11 +380,14 @@ class Evaluation:
                                                   largest_piece=additional_transformation['largest_piece_name'])
 
         q_pos = 0
+        total_area = 0
 
         image_canvases = {}
         gt_image_canvases = {}
 
         # Apply the transformations on all the pieces then place them on the shared canvas
+        solution_canvas_for_debug = Image.new('RGBA', (shared_canvas_width, shared_canvas_height), (0, 0, 0, 0))
+        gt_canvas_for_debug = Image.new('RGBA', (shared_canvas_width, shared_canvas_height), (0, 0, 0, 0))
         for index, row in transformations_non_negative.iterrows():
             piece_filename = row['rpf']
             x = int(row['x'])
@@ -157,14 +402,17 @@ class Evaluation:
             new_piece = self.apply_transformations_on_piece(piece_img, x, y, rot, additional_x, additional_y)
             new_canvas = Image.new('RGBA', (shared_canvas_width, shared_canvas_height), (0, 0, 0, 0))
             new_canvas.alpha_composite(new_piece)
+            solution_canvas_for_debug.alpha_composite(new_piece)
             image_canvases[piece_filename] = new_canvas
 
             gt_new_piece = self.apply_transformations_on_piece(piece_img, gt_x, gt_y, gt_rot, additional_x_for_gt,
                                                           additional_y_for_gt)
             new_gt_canvas = Image.new('RGBA', (shared_canvas_width, shared_canvas_height), (0, 0, 0, 0))
             new_gt_canvas.alpha_composite(gt_new_piece)
+            gt_canvas_for_debug.alpha_composite(gt_new_piece)
             gt_image_canvases[piece_filename] = new_gt_canvas
 
+       
         rotated_image_canvases = {}
         largest_piece = image_canvases[f'{additional_transformation["largest_piece_name"]}']
         non_alpha_bbox = Image.fromarray(np.array(largest_piece)[:, :, 3]).getbbox()
@@ -188,6 +436,7 @@ class Evaluation:
                 shared_area = self.calculate_shared_area(rotated_image_canvases[piece_filename],
                                                     gt_image_canvases[piece_filename])
                 partial_q_pos_score = piece_weight * (shared_area / result_area)
+                # partial_q_pos_score = shared_area
 
                 if log:
                     print(f"Piece: {piece_filename}")
@@ -195,11 +444,21 @@ class Evaluation:
                     print(f"Result area: {result_area}")
                     print(f"Shared area: {shared_area}")
                     print(f"Partial Q_pos score: {partial_q_pos_score}")
-
+                # total_area += result_area
                 q_pos += partial_q_pos_score
 
         if log:
             print(f"Q_pos score: {q_pos}")
+        
+        # import matplotlib.pyplot as plt
+        # plt.figure()
+        # plt.suptitle(f"Q_pos: {(q_pos):.03f}")
+        # plt.subplot(121); plt.title("SOLUTION")
+        # plt.imshow(np.array(solution_canvas_for_debug))
+        # plt.subplot(122); plt.title('GT')
+        # plt.imshow(np.array(gt_canvas_for_debug))
+        # plt.show()
+        # breakpoint()
 
         return q_pos if not debug else (q_pos, rotated_image_canvases, gt_image_canvases)
 
@@ -416,12 +675,12 @@ class Evaluation:
         new_image2.paste(image2, (0, 0))
         return new_image1, new_image2
 
-    def normalize_results_and_ground_truth(self, results, ground_truth):
+    def normalize_results_and_ground_truth(self, results, ground_truth, base_fragment):
         """
         Normalize the results and ground truth dictionaries to first piece.
         First piece is considered as the anchor piece and all other pieces are normalized toward it.
         """
-        base_fragment = next(iter(results.keys()))
+        # base_fragment = next(iter(results.keys()))
         print(f"Base fragment: {base_fragment}")
 
         for key in results.keys():
@@ -439,19 +698,17 @@ class Evaluation:
         res = {pid: [x - rx, y - ry, theta] for pid, (x, y, theta) in results.items()}
 
         # Normalize angle to the first piece
-
         d_theta = (g_theta - r_theta) % 360
         if d_theta:
             sin_t, cos_t = math.sin(math.radians(d_theta)), math.cos(math.radians(d_theta))
             res_rot = {}
             for pid, (x, y, theta) in res.items():
-                x2 = cos_t * x - sin_t * y
-                y2 = sin_t * x + cos_t * y
+                x2 = cos_t * x + sin_t * y
+                y2 = -1 * sin_t * x + cos_t * y
                 res_rot[pid] = [x2, y2, (theta + d_theta) % 360]
             res = res_rot
 
         # to avoid negative coordinates
-
         min_x = min(p[0] for p in gt.values())
         min_y = min(p[1] for p in gt.values())
         dx = -min_x if min_x < 0 else 0.0
