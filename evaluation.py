@@ -3,7 +3,7 @@ import numpy as np
 import math
 from sklearn.metrics import root_mean_squared_error
 
-from geodesic_loss import GeodesicLoss
+# from geodesic_loss import GeodesicLoss
 
 from PIL import Image
 
@@ -199,8 +199,9 @@ class Evaluation:
 
         # print(f"RMSE R: \n\tlib: {RMSE_r}\n\told: {rmse_rot}")
 
-        breakpoint()
-        geodesic_loss = self.g_loss()
+        # IDEA TO USE GEODESIC LOSS HERE
+        # breakpoint()
+        # geodesic_loss = self.g_loss()
 
         rmse_values = {
             'RMSE_rot': RMSE_r % 360,
