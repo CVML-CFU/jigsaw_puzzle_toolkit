@@ -470,14 +470,18 @@ class PuzzleGenerator:
         2026 / 02
         """
         self.pieces = {}
-        self.gt = {} # as a list [x, y, theta]
+        self.gt = {
+            'pieces': {},
+            # TODO: adjacency = {}
+        } 
         bg_mat = np.zeros_like(self.img)
         h_max = 0
         w_max = 0
         dist_cm_max = 0
         for i in range(self.start_from, self.region_cnt):
+            j = i - self.start_from # useful if you start from values > 0
             # 1. Extract the piece from the region
-            piece_name = f"piece_{i:02d}"
+            piece_name = f"piece_{j:03d}"
             mask_i = self.region_mat == i
             if len(self.img.shape) > 2: 
                 image_i = self.img * np.repeat(mask_i, self.img.shape[2]).reshape(self.img.shape)
@@ -522,7 +526,12 @@ class PuzzleGenerator:
                 'width': w_i,
                 'shift2center': shift2center
             }
-            self.gt[piece_name] = [float(cm_i[0]), float(cm_i[1]), 0]
+            self.gt['pieces'][j] = {
+                'name': piece_name,
+                'x': float(cm_i[1]),
+                'y': float(cm_i[0]),
+                'theta': 0
+            }
 
         # 4. Squared version of the pieces 
         diam_dist_cm = int(dist_cm_max * 2)
@@ -537,8 +546,9 @@ class PuzzleGenerator:
         from_idx = np.round(center_i-hsq).astype(int)
         to_idx = np.round(center_i+hsq).astype(int)
         for p_name in self.pieces.keys():
-            squared_img = np.zeros((self.sq_size, self.sq_size, 3))
-            squared_img = self.pieces[p_name]['centered_image'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1]]
+            squared_img = np.zeros((self.sq_size, self.sq_size, 4))
+            squared_img[:,:,:3] = self.pieces[p_name]['centered_image'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1], ::-1]
+            squared_img[:,:,3] = np.sum(squared_img[:,:,:3], axis=2) > 0
             squared_mask = self.pieces[p_name]['centered_mask'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1]]
             # we remove the offset in the centered polygon to get it aligned
             xoffset = - (self.img.shape[1]-self.sq_size) / 2   # half of the distance from the square to the shape of the image!
@@ -550,7 +560,7 @@ class PuzzleGenerator:
                     degrees = np.round(np.random.uniform(0, 3)).astype(np.uint8) * 90
                 elif self.rotation_type == 3: # free deg rotation
                     degrees = random.uniform(-self.rotation_range, self.rotation_range)
-                self.gt[p_name][2] = degrees
+                self.gt['pieces'][j]['theta'] = degrees
                 squared_img, squared_mask, squared_poly = self.rotate_piece(squared_img, squared_mask, squared_poly, degrees, method='ND')
 
             self.pieces[p_name]['squared_image'] = squared_img
@@ -570,7 +580,10 @@ class PuzzleGenerator:
         2026 / 02
         """
         self.pieces = {}
-        self.gt = {} # as a list [x, y, theta]
+        self.gt = {
+            'pieces': {},
+            # TODO: adjacency = {}
+        } 
         square_side = self.img.shape[0]
         if square_side // 2 == 0:
             square_side += 1
@@ -579,8 +592,9 @@ class PuzzleGenerator:
         w_max = 0
         dist_cm_max = 0
         for i in range(self.start_from, self.region_cnt):
+            j = i - self.start_from
             # use keys!
-            piece_name = f"piece_{i:02d}"
+            piece_name = f"piece_{j:03d}"
             mask_i = self.region_mat == i
             if len(self.img.shape) > 2: 
                 image_i = self.img * np.repeat(mask_i, self.img.shape[2]).reshape(self.img.shape)
@@ -628,7 +642,12 @@ class PuzzleGenerator:
                 'width': w_i,
                 'shift2center': shift2center
             }
-            self.gt[piece_name] = [float(cm_i[0]), float(cm_i[1]), 0]
+            self.gt['pieces'][j] = {
+                'name': piece_name,
+                'x': float(cm_i[1]),
+                'y': float(cm_i[0]),
+                'theta': 0
+            }
         # 4. Squared version of the pieces 
         diam_dist_cm = int(dist_cm_max * 2)
         self.sq_size = max(h_max, w_max, diam_dist_cm) + self.padding
@@ -642,8 +661,9 @@ class PuzzleGenerator:
         from_idx = np.round(center_i-hsq).astype(int)
         to_idx = np.round(center_i+hsq).astype(int)
         for p_name in self.pieces.keys():
-            squared_img = np.zeros((self.sq_size, self.sq_size, 3))
-            squared_img = self.pieces[p_name]['centered_image'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1]]
+            squared_img = np.zeros((self.sq_size, self.sq_size, 4))
+            squared_img[:,:,:3] = self.pieces[p_name]['centered_image'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1], ::-1]
+            squared_img[:,:,3] = np.sum(squared_img[:,:,:3], axis=2) > 0
             squared_mask = self.pieces[p_name]['centered_mask'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1]]
             # we remove the offset in the centered polygon to get it aligned
             xoffset = - (self.img.shape[1]-self.sq_size) / 2   # half of the distance from the square to the shape of the image!
@@ -654,7 +674,7 @@ class PuzzleGenerator:
                     degrees = np.round(np.random.uniform(0, 3)).astype(np.uint8) * 90
                 elif self.rotation_type == 3: # free deg rotation
                     degrees = random.uniform(-self.rotation_range, self.rotation_range)
-                self.gt[p_name][2] = degrees
+                self.gt['pieces'][j]['theta'] = degrees
                 squared_img, squared_mask, squared_poly = self.rotate_piece(squared_img, squared_mask, squared_poly, degrees, method='ND')
 
             self.pieces[p_name]['squared_image'] = squared_img

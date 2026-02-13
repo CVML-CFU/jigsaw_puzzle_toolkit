@@ -166,7 +166,7 @@ class Puzzle:
             output_folder_name = self.puzzle_name
         if self.input_type == 'image':
             output_folder_name = f"{self.puzzle_type._type()}{self.puzzle_type._rot()}_{output_folder_name.split('.')[0]}" # remove .jpg or .png
-        self.output_dir = os.path.join(output_path, output_folder_name)
+        self.output_dir = os.path.join(output_path, 'preprocessing', output_folder_name)
         os.makedirs(self.output_dir, exist_ok=True)
         self.names = []
         self.images = []
@@ -270,7 +270,7 @@ class Puzzle:
                 smooth_flag=True, alpha_channel=True, perc_missing_fragments=0, erosion=0, borders=False)
             generator.save_jpg_regions(self.output_dir, skip_bg=False)
             parameters['start_from'] = 0
-            self.pieces, self.patch_size = generator.extract_pieces()
+            self.pieces, self.patch_size, self.gt = generator.extract_pieces()
             
         if self.pieces_type == 'M' and pattern_map_path is not None: # if shape == 'pattern'
             patterns_map = cv2.imread(pattern_map_path, cv2.IMREAD_GRAYSCALE)
@@ -650,17 +650,16 @@ class Puzzle:
         else:
             for p_name in self.pieces.keys():
                 piece = self.pieces[p_name]
-                # breakpoint()
-                plt.imsave(os.path.join(images_out_dir, f"{p_name}.png"), np.clip(piece['squared_image'][:,:,::-1], 0, 1))
+                plt.imsave(os.path.join(images_out_dir, f"{p_name}.png"), np.clip(piece['squared_image'], 0, 1))
                 # cv2.imwrite(os.path.join(images_out_dir, f"piece_{j:04d}.png"), np.round(piece['centered_image']*255).astype(np.uint8))
-                cv2.imwrite(os.path.join(bmasks_out_dir, f"mask_{p_name}.png"), piece['squared_mask'])
-                np.save(os.path.join(polygons_out_dir, f"polygon_{p_name}.png"), piece['squared_polygon'])
+                cv2.imwrite(os.path.join(bmasks_out_dir, f"{p_name}.png"), piece['squared_mask'])
+                np.save(os.path.join(polygons_out_dir, f"{p_name}"), piece['squared_polygon'])
 
         with open(os.path.join(self.output_dir, "ground_truth.json"), 'w') as jf:
             json.dump(self.gt, jf, indent=2)
         with open(os.path.join(self.output_dir, "puzzle_info.json"), 'w') as jf:
             json.dump(self.puzzle_info, jf, indent=2)
-        np.savetxt(os.path.join(self.output_dir, "ground_truth.txt"), np.asarray(list(self.gt.values())))
+        # np.savetxt(os.path.join(self.output_dir, "ground_truth.txt"), np.asarray(list(self.gt['pieces'].values())))
         print("Done!")
 
     def show_piece(self, index: int = 0):
