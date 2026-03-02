@@ -24,7 +24,7 @@ from puzzle import PuzzleType, Puzzle
 def main(args):
 
     puzzle = Puzzle(input_path=args.input, puzzle_type=args.puzzle_type, output_path=args.output, input_type=args.input_type, target_size=args.new_size)
-    puzzle.prepare_puzzle(num_pieces = 9, crop_pieces = True, pattern_map_path = args.pattern_map)
+    puzzle.prepare_puzzle(num_pieces = args.num_pieces, crop_pieces = True, pattern_map_path = args.pattern_map)
     puzzle.save()
     if args.input_type == 'repair' or args.input_type == 'json':
         # copy preview
@@ -39,6 +39,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Create a puzzle')
     parser.add_argument('--input', '-I', type=str, default='input', help='path to an image or a set of fragments')
     parser.add_argument('--input_type', '-IT', type=str, default='image') # 'image', 'repair', 'json'
+    parser.add_argument('--num_pieces', '-NP', type=int, default=9) # 'image', 'repair', 'json'
     parser.add_argument('--pattern_map', '-M', type=str, default='') 
     parser.add_argument('--puzzle_type', '-PT', type=PuzzleType, choices=list(PuzzleType), help='puzzle type')
     parser.add_argument('--output', '-O', type=str, default='output', help='path to the output where the puzzle files will be placed')
