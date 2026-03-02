@@ -23,11 +23,8 @@ from puzzle import PuzzleType, Puzzle
 
 def main(args):
 
-    #root_path = ('/run/user/1000/gvfs/sftp:host=gpu1.dsi.unive.it,user=m.khoroshiltseva/home/ssd/datasets/RePAIR_v2/3_Rendered_2D/SOLVED/puzzle_0000025_RP_group_24')
     puzzle = Puzzle(input_path=args.input, puzzle_type=args.puzzle_type, output_path=args.output, input_type=args.input_type, target_size=args.new_size)
-    #puzzle = Puzzle(args.input, args.puzzle_type, args.output)
     puzzle.prepare_puzzle(num_pieces = 9, crop_pieces = True, pattern_map_path = args.pattern_map)
-    # puzzle.create_pieces()
     puzzle.save()
     if args.input_type == 'repair' or args.input_type == 'json':
         # copy preview
