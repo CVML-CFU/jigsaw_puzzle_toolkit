@@ -89,7 +89,9 @@ class PuzzleGenerator:
         self.img_size = self.img.shape[:2] # Height, Width, Channel
         self.aspect_ratio = self.img_size[0] / self.img_size[1]
         self.erosion_kernel_size = 7
-        self.dilation_kernel_size = 51
+        self.dilation_kernel_size = 11
+        self.dilation_kernel = np.ones((self.dilation_kernel_size, self.dilation_kernel_size))
+        self.minimum_overlap_for_adjacency = 300 # pixels! 
 
         # name of the file without extension
         self.name = parameters.get('name', "no_name")
@@ -473,17 +475,31 @@ class PuzzleGenerator:
         self.pieces = {}
         self.gt = {
             'pieces': {},
-            # TODO: adjacency = {}
+            'adjacency': []
         } 
         bg_mat = np.zeros_like(self.img)
         h_max = 0
         w_max = 0
         dist_cm_max = 0
+        
         for i in range(self.start_from, self.region_cnt):
             j = i - self.start_from # useful if you start from values > 0
             # 1. Extract the piece from the region
             piece_name = f"piece_{j:03d}"
             mask_i = self.region_mat == i
+            # 1b. Calculate adjacency matrix
+            for k in range(i+1, self.region_cnt):
+                mask_k = self.region_mat == k
+                overlap = np.sum(cv2.dilate(mask_i.astype(np.uint8), self.dilation_kernel) * cv2.dilate(mask_k.astype(np.uint8), self.dilation_kernel))
+                if overlap > self.minimum_overlap_for_adjacency: 
+                    self.gt['adjacency'].append([j, k])
+                # else:
+                # plt.subplot(131); plt.imshow(mask_i)
+                # plt.subplot(132); plt.imshow(mask_k)
+                # plt.subplot(133); plt.imshow(cv2.dilate(mask_i.astype(np.uint8), self.dilation_kernel) * cv2.dilate(mask_k.astype(np.uint8), self.dilation_kernel))
+                # plt.suptitle(f"overlap: {overlap}, threshold: {self.minimum_overlap_for_adjacency}")
+                # plt.show()
+                # breakpoint()
             if len(self.img.shape) > 2: 
                 image_i = self.img * np.repeat(mask_i, self.img.shape[2]).reshape(self.img.shape)
             else:
@@ -586,7 +602,7 @@ class PuzzleGenerator:
         self.pieces = {}
         self.gt = {
             'pieces': {},
-            # TODO: adjacency = {}
+            'adjacency': []
         } 
         square_side = self.img.shape[0]
         if square_side // 2 == 0:
@@ -600,6 +616,12 @@ class PuzzleGenerator:
             # use keys!
             piece_name = f"piece_{j:03d}"
             mask_i = self.region_mat == i
+            # 1b. Calculate adjacency matrix
+            for k in range(i+1, self.region_cnt):
+                mask_k = self.region_mat == k
+                overlap = np.sum(cv2.dilate(mask_i.astype(np.uint8), self.dilation_kernel) * cv2.dilate(mask_k.astype(np.uint8), self.dilation_kernel))
+                if overlap > self.minimum_overlap_for_adjacency: 
+                    self.gt['adjacency'].append([j, k])
             if len(self.img.shape) > 2: 
                 image_i = self.img * np.repeat(mask_i, self.img.shape[2]).reshape(self.img.shape)
             else:
