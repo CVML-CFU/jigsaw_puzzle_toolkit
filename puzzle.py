@@ -153,7 +153,7 @@ class Puzzle:
 
         self.input_type = input_type
         if self.input_type == 'repair' or self.input_type == 'json':
-            input_path = os.path.join(root_path, 'data.json')
+            input_path = os.path.join(root_path, 'data.json') # TODO: construct the `root_path`
         self.input_path = input_path
         self.puzzle_type = puzzle_type
         self.rotation_type = self.puzzle_type._rot()
@@ -218,14 +218,14 @@ class Puzzle:
 
     def adapt_to_pattern_size(self, image, pattern_map, crop=True):
         
-        if crop == True:
+        if crop:
             target_size = pattern_map.shape[0]
             # Get current dimensions
             h, w = image.shape[:2]
             # Calculate scale factor to match the smaller dimension
             scale = target_size / min(h, w)
             # Resize so smaller side becomes target_size
-            resized = resize(image, (int(h * scale), int(w * scale)), anti_aliasing=True)
+            resized = resize(image, (np.ceil(h * scale).astype(int), np.ceil(w * scale).astype(int)), anti_aliasing=True)
         
             # Crop center to target_size x target_size
             h_new, w_new = resized.shape[:2]
@@ -263,7 +263,10 @@ class Puzzle:
         # with open(os.path.join(self.output_dir, "puzzle_info.json"), 'w') as jf:
         #     json.dump(self.puzzle_info, jf, indent=2)
 
+        # image should have floating values between 0 and 1
         if self.pieces_type == 'I': # == 'irregular':
+            scaled_image = np.zeros((self.target_size, self.target_size))   # fake pattern map to use the same "cropping method"
+            image = self.adapt_to_pattern_size(image, scaled_image)         # resize the image and ensure values are correct
             generator = PuzzleGenerator(image, parameters=parameters)
             # generator.generate_regions(puzzle_parameters, save_image=True)
             generated_puzzle = generator.run(num_pieces, offset_rate_h=0.2, offset_rate_w=0.2, small_region_area_ratio=0.25, rot_range=0,
@@ -282,6 +285,7 @@ class Puzzle:
             generator.save_jpg_regions(self.output_dir, skip_bg=True)
             parameters['start_from'] = 1
             self.pieces, self.patch_size, self.gt = generator.extract_pieces()
+
 
         if self.pieces_type == 'P' and pattern_map_path is not None: # if shape == 'polyominos'
             region_map = cv2.imread(f"{pattern_map_path}.png", cv2.IMREAD_GRAYSCALE)

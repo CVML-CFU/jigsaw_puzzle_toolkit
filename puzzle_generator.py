@@ -77,6 +77,7 @@ class Vector:
     
     def __mul__(self, scalar):
         return Vector(self.x * scalar, self.y * scalar)
+
 ##############################
 ##############################
 class PuzzleGenerator:
@@ -84,7 +85,7 @@ class PuzzleGenerator:
     def __init__(self, img, parameters:dict, pieces_centers=None):
         #img_name:str, rotations_type:int, pieces_type:str, pieces_centers=None, ):
 
-        self.img = img
+        self.img = img # img should have floating values between 0 and 1
         self.img_size = self.img.shape[:2] # Height, Width, Channel
         self.aspect_ratio = self.img_size[0] / self.img_size[1]
         self.erosion_kernel_size = 7
@@ -545,7 +546,7 @@ class PuzzleGenerator:
         # remember center ordering!
         from_idx = np.round(center_i-hsq).astype(int)
         to_idx = np.round(center_i+hsq).astype(int)
-        for p_name in self.pieces.keys():
+        for j, p_name in enumerate(self.pieces.keys()):
             squared_img = np.zeros((self.sq_size, self.sq_size, 4))
             squared_img[:,:,:3] = self.pieces[p_name]['centered_image'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1], ::-1]
             squared_img[:,:,3] = np.sum(squared_img[:,:,:3], axis=2) > 0
@@ -557,9 +558,12 @@ class PuzzleGenerator:
             # 5. handling rotations
             if self.rotation_type > 1:
                 if self.rotation_type == 2: # 90 deg rotation
-                    degrees = np.round(np.random.uniform(0, 3)).astype(np.uint8) * 90
+                    degrees = int(np.round(np.random.uniform(0, 3)) * 90)
                 elif self.rotation_type == 3: # free deg rotation
                     degrees = random.uniform(-self.rotation_range, self.rotation_range)
+                else:
+                    print("unknown rotation type!")
+                    raise NotImplementedError()                
                 self.gt['pieces'][j]['theta'] = degrees
                 squared_img, squared_mask, squared_poly = self.rotate_piece(squared_img, squared_mask, squared_poly, degrees, method='ND')
 
@@ -660,7 +664,7 @@ class PuzzleGenerator:
         # remember center ordering!
         from_idx = np.round(center_i-hsq).astype(int)
         to_idx = np.round(center_i+hsq).astype(int)
-        for p_name in self.pieces.keys():
+        for j, p_name in enumerate(self.pieces.keys()):
             squared_img = np.zeros((self.sq_size, self.sq_size, 4))
             squared_img[:,:,:3] = self.pieces[p_name]['centered_image'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1], ::-1]
             squared_img[:,:,3] = np.sum(squared_img[:,:,:3], axis=2) > 0
@@ -671,9 +675,12 @@ class PuzzleGenerator:
             squared_poly = shapely.affinity.translate(self.pieces[p_name]['centered_polygon'], xoff=xoffset, yoff=yoffset)
             if self.rotation_type > 1:
                 if self.rotation_type == 2: # 90 deg rotation
-                    degrees = np.round(np.random.uniform(0, 3)).astype(np.uint8) * 90
+                    degrees = int(np.round(np.random.uniform(0, 3)) * 90)
                 elif self.rotation_type == 3: # free deg rotation
                     degrees = random.uniform(-self.rotation_range, self.rotation_range)
+                else:
+                    print("unknown rotation type!")
+                    raise NotImplementedError()          
                 self.gt['pieces'][j]['theta'] = degrees
                 squared_img, squared_mask, squared_poly = self.rotate_piece(squared_img, squared_mask, squared_poly, degrees, method='ND')
 
