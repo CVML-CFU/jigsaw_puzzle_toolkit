@@ -8,7 +8,7 @@ def main(args):
     input_images = natsort.natsorted(os.listdir(args.input))
     if args.puzzle_type._type() == 'M' or args.puzzle_type._type() == 'P':
         num_available_pattern_maps = len(os.listdir(args.pattern_map))
-        assert(len(num_available_pattern_maps) == len(input_images)), "You should provide a pattern map for each image!"
+        assert(num_available_pattern_maps == len(input_images)), "You should provide a pattern map for each image!"
     
     for input_image in input_images:
         

@@ -15,6 +15,24 @@ from skimage.transform import resize
 from puzzle_generator import PuzzleGenerator
 
 
+
+#######################################################
+#                                                     #
+#  ██████╗ ██╗   ██╗███████╗███████╗██╗     ███████╗  #
+#  ██╔══██╗██║   ██║╚══███╔╝╚══███╔╝██║     ██╔════╝  #
+#  ██████╔╝██║   ██║  ███╔╝   ███╔╝ ██║     █████╗    #
+#  ██╔═══╝ ██║   ██║ ███╔╝   ███╔╝  ██║     ██╔══╝    #
+#  ██║     ╚██████╔╝███████╗███████╗███████╗███████╗  #
+#  ╚═╝      ╚═════╝ ╚══════╝╚══════╝╚══════╝╚══════╝  #
+#                                                     #
+#  ████████╗██╗   ██╗██████╗ ███████╗                 #
+#  ╚══██╔══╝╚██╗ ██╔╝██╔══██╗██╔════╝                 #
+#     ██║    ╚████╔╝ ██████╔╝█████╗                   #
+#     ██║     ╚██╔╝  ██╔═══╝ ██╔══╝                   #
+#     ██║      ██║   ██║     ███████╗                 #
+#     ╚═╝      ╚═╝   ╚═╝     ╚══════╝                 #
+#                                                     #
+#######################################################
 class PuzzleType(Enum):
     """
     Type S1: SQUARED PIECES, NO ROTATION
@@ -146,10 +164,22 @@ def extract_polygon(binary_mask: np.ndarray, return_vals: bool = False):
     else:
         return polygon
 
+
+
+#######################################################
+#                                                     #
+#  ██████╗ ██╗   ██╗███████╗███████╗██╗     ███████╗  #
+#  ██╔══██╗██║   ██║╚══███╔╝╚══███╔╝██║     ██╔════╝  #
+#  ██████╔╝██║   ██║  ███╔╝   ███╔╝ ██║     █████╗    #
+#  ██╔═══╝ ██║   ██║ ███╔╝   ███╔╝  ██║     ██╔══╝    #
+#  ██║     ╚██████╔╝███████╗███████╗███████╗███████╗  #
+#  ╚═╝      ╚═════╝ ╚══════╝╚══════╝╚══════╝╚══════╝  #
+#                                                     #
+#######################################################
 class Puzzle:
 
     def __init__(self, input_path: str, puzzle_type: PuzzleType, output_path: str, input_type: str, padding: int = 1000, \
-        target_size: tuple[int, int] = (0, 0), puzzle_name: str = None, output_folder_name:str = None):    
+        target_size: tuple[int, int] = (0, 0), puzzle_name: str = None, output_folder_name:str = None, curves_type:str = "smooth"):    
 
         self.input_type = input_type
         if self.input_type == 'repair' or self.input_type == 'json':
@@ -158,15 +188,22 @@ class Puzzle:
         self.puzzle_type = puzzle_type
         self.rotation_type = self.puzzle_type._rot()
         self.pieces_type = self.puzzle_type._type()
-        if not puzzle_name:
-            puzzle_name = os.path.basename(input_path)
-        self.puzzle_name = puzzle_name
-        #self.output_path = output_path
-        if not output_folder_name:
-            output_folder_name = self.puzzle_name
+        # SET PUZZLE NAME and OUTPUT FOLDER
         if self.input_type == 'image':
-            output_folder_name = f"{self.puzzle_type._type()}{self.puzzle_type._rot()}_{output_folder_name.split('.')[0]}" # remove .jpg or .png
-        self.output_dir = os.path.join(output_path, 'preprocessing', output_folder_name)
+            # without name, we take it from path
+            if not puzzle_name:
+                self.puzzle_name = os.path.basename(input_path)
+                self.output_folder_name = f"{self.puzzle_type._type()}{self.puzzle_type._rot()}_{output_folder_name.split('.')[0]}" # remove .jpg or .png
+            # if name given, we keep it untouched
+            else:
+                self.puzzle_name = puzzle_name
+                self.output_folder_name = puzzle_name
+        # if it's from particular type, for example pieces, we put that type plus the folder containing the pieces ([-2] in the path!)
+        else:
+            self.puzzle_name = f"{self.input_type}__{self.input_path.split('/')[-2]}"
+            self.output_folder_name = self.puzzle_name
+
+        self.output_dir = os.path.join(output_path, 'preprocessing', self.output_folder_name)
         os.makedirs(self.output_dir, exist_ok=True)
         self.names = []
         self.images = []
@@ -185,29 +222,41 @@ class Puzzle:
         self.padding = padding
         self.target_size = target_size
         self.random_rotations = []
+        # we have two types: `smooth` and `segment`
+        # - smooth: creates puzzle with smooth curves (S-like)
+        # - segment: creates puzzle with segmented line (W-like)
+        self.curves_type = curves_type
 
-    def prepare_puzzle(self, num_pieces: int = 9, crop_pieces: bool = True, pattern_map_path: str = None):
+    def prepare_puzzle(self, num_pieces: int = 9, crop_pieces: bool = True, pattern_map_path: str = None, monomino_square_size: int = None):
         if self.input_type == 'repair' or self.input_type == 'json':
             self.prepare_puzzle_from_json(crop_pieces = crop_pieces, new_size = self.target_size[0])
         if self.input_type == 'image':
-            self.prepare_puzzle_from_image(num_pieces = num_pieces, pattern_map_path = pattern_map_path)
+            self.prepare_puzzle_from_image(num_pieces = num_pieces, pattern_map_path = pattern_map_path, monomino_square_size = monomino_square_size)
 
-    def process_region_map(self, region_map, perc_min=0.01):
+    def process_region_map(self, region_map, perc_min=0.01, square_size:int=0):
         """
         It eliminates small regions and keep only the one who are "big" enough 
         """
         uvals = np.unique(region_map)
         rmap = np.zeros_like(region_map)
         rc = 1
+        
         min_pixels = region_map.shape[0] * region_map.shape[1] * perc_min
+        if square_size > 0:
+            min_pixels = square_size # we know this is the smallest piece (monomino)
         for uval in np.unique(region_map): 
             # print(f"region with value:{uval} has {np.sum(region_map==uval)} pixels")
             # plt.imshow(region_map==uval)
             # plt.show()
-            if np.sum(region_map==uval) > min_pixels and uval > 0:
+            # breakpoint()
+            if np.sum(region_map==uval) >= min_pixels and uval > 0:
                 rmap += (region_map==uval).astype(np.uint8) * rc
                 rc += 1
             elif uval > 0:
+                print(f"region with value:{uval} has {np.sum(region_map==uval)} pixels (min_pixels: {min_pixels})")
+                plt.imshow(region_map==uval)
+                plt.show()
+                breakpoint()
                 print("region too small! check threshold")
 
         # plt.subplot(121); plt.imshow(region_map, vmin=0, vmax=255)
@@ -239,7 +288,7 @@ class Puzzle:
         # image = np.round(image * 255).astype(np.uint8)
         return adapted
 
-    def prepare_puzzle_from_image(self, num_pieces: int = 9, pattern_map_path: str = None):
+    def prepare_puzzle_from_image(self, num_pieces: int = 9, pattern_map_path: str = None, monomino_square_size: int = None):
         """ 
         Starting from an image, creates the pieces by cutting it 
         it uses the parameters given in the creation of the Puzzle object
@@ -254,8 +303,13 @@ class Puzzle:
             'rotation_type_s': self.puzzle_type._rot_str(),
             'pieces_type': self.puzzle_type._type(),
             'pieces_type_s': self.puzzle_type._type_str(),
-            'rotation_range': 180
+            'rotation_range': 180,
+            'curves_type': self.curves_type
         }
+        if monomino_square_size is not None:
+            parameters['monomino_square_size'] = monomino_square_size
+        else:
+            parameters['monomino_square_size'] = 0
         # np.savetxt(os.path.join(self.output_dir, "random_rot.txt"), np.asarray(self.random_rotations))
         # np.savetxt(os.path.join(self.output_dir, "ground_truth.txt"), np.asarray(self.positions))
         # with open(os.path.join(self.output_dir, "ground_truth.json"), 'w') as jf:
@@ -294,7 +348,7 @@ class Puzzle:
                 pieces_centers = json.load(jc)
             
             image = self.adapt_to_pattern_size(image, region_map)
-            pattern_map, num_pieces = self.process_region_map(region_map)
+            pattern_map, num_pieces = self.process_region_map(region_map, square_size = (parameters['monomino_square_size']**2))
             generator = PuzzleGenerator(image, parameters=parameters, pieces_centers=pieces_centers)
             generator.region_cnt = num_pieces + 1
             generator.region_mat = pattern_map # processed version 
@@ -306,6 +360,8 @@ class Puzzle:
         # they should be done for any kind of puzzle 
         self.puzzle_info = generator.info()
         self.puzzle_info['puzzle_image_size'] = image.shape 
+        self.puzzle_info['img_name'] = os.path.basename(self.input_path)
+        self.puzzle_info['pattern_map_name'] = os.path.basename(pattern_map_path) if pattern_map_path else ""
 
     def prepare_puzzle_from_json(self, crop_pieces: bool = False, add_random_rotations: bool = False, theta_step: int = 45):
         """ Loads the data and handles the different use-cases. """

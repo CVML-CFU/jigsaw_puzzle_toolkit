@@ -78,8 +78,25 @@ class Vector:
     def __mul__(self, scalar):
         return Vector(self.x * scalar, self.y * scalar)
 
-##############################
-##############################
+
+
+###################################################################################
+#                                                                                 #
+#  ██████╗ ██╗   ██╗███████╗███████╗██╗     ███████╗                              #
+#  ██╔══██╗██║   ██║╚══███╔╝╚══███╔╝██║     ██╔════╝                              #
+#  ██████╔╝██║   ██║  ███╔╝   ███╔╝ ██║     █████╗                                #
+#  ██╔═══╝ ██║   ██║ ███╔╝   ███╔╝  ██║     ██╔══╝                                #
+#  ██║     ╚██████╔╝███████╗███████╗███████╗███████╗                              #
+#  ╚═╝      ╚═════╝ ╚══════╝╚══════╝╚══════╝╚══════╝                              #
+#                                                                                 #
+#   ██████╗ ███████╗███╗   ██╗███████╗██████╗  █████╗ ████████╗ ██████╗ ██████╗   #
+#  ██╔════╝ ██╔════╝████╗  ██║██╔════╝██╔══██╗██╔══██╗╚══██╔══╝██╔═══██╗██╔══██╗  #
+#  ██║  ███╗█████╗  ██╔██╗ ██║█████╗  ██████╔╝███████║   ██║   ██║   ██║██████╔╝  #
+#  ██║   ██║██╔══╝  ██║╚██╗██║██╔══╝  ██╔══██╗██╔══██║   ██║   ██║   ██║██╔══██╗  #
+#  ╚██████╔╝███████╗██║ ╚████║███████╗██║  ██║██║  ██║   ██║   ╚██████╔╝██║  ██║  #
+#   ╚═════╝ ╚══════╝╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝  #
+#                                                                                 #
+###################################################################################
 class PuzzleGenerator:
 
     def __init__(self, img, parameters:dict, pieces_centers=None):
@@ -101,6 +118,11 @@ class PuzzleGenerator:
         self.rotation_type_description = parameters.get('rotation_type_s', "no rotation")  
         self.pieces_type = parameters.get('pieces_type', "S")  
         self.pieces_type_description = parameters.get('pieces_type_s', "squared")  
+        self.curves_type = parameters.get('curves_type', "smooth") 
+        if self.curves_type == 'segment':
+            self.smooth_flag = False            # the curves for cutting pieces become segments
+        # if self.curves_type == 'smooth':
+        #    self.smooth_flag = True 
         self.start_from = 0
         if self.pieces_type == "M" or self.pieces_type == "P":
             self.start_from = 1
@@ -688,9 +710,26 @@ class PuzzleGenerator:
         to_idx = np.round(center_i+hsq).astype(int)
         for j, p_name in enumerate(self.pieces.keys()):
             squared_img = np.zeros((self.sq_size, self.sq_size, 4))
-            squared_img[:,:,:3] = self.pieces[p_name]['centered_image'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1], ::-1]
-            squared_img[:,:,3] = np.sum(squared_img[:,:,:3], axis=2) > 0
-            squared_mask = self.pieces[p_name]['centered_mask'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1]]
+            squared_img2 = np.zeros((self.sq_size, self.sq_size, 4))
+            # fill only the central part 
+            try:
+                squared_img[:,:,:3] = self.pieces[p_name]['centered_image'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1], ::-1]
+                squared_img[:,:,3] = np.sum(squared_img[:,:,:3], axis=2) > 0
+                squared_mask = self.pieces[p_name]['centered_mask'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1]]
+            except:
+                row_start2 = (self.sq_size - square_side) // 2
+                col_start2 = (self.sq_size - square_side) // 2
+                squared_img[row_start2:row_start2 + square_side, col_start2:col_start2 + square_side, :3] = self.pieces[p_name]['centered_image']
+                squared_img[:,:,3] = np.sum(squared_img[:,:,:3], axis=2) > 0
+                squared_mask = squared_img2[:,:,3] #self.pieces[p_name]['centered_mask'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1]]
+            # plt.subplot(231); plt.title("centered"); plt.imshow(self.pieces[p_name]['centered_image']); plt.scatter(square_side / 2, square_side / 2, marker='X', linewidths=5)
+            # plt.subplot(232); plt.title("centered"); plt.imshow(self.pieces[p_name]['centered_mask']); plt.scatter(square_side / 2, square_side / 2, marker='X', linewidths=5)
+            # plt.subplot(233); plt.title("New CODE"); plt.imshow(squared_img2); plt.scatter(square_side / 2, square_side / 2, marker='X', linewidths=5)
+            # plt.subplot(234); plt.title("New CODE"); plt.imshow(squared_mask2); plt.scatter(square_side / 2, square_side / 2, marker='X', linewidths=5)
+            # plt.subplot(235); plt.title("Old CODE"); plt.imshow(squared_img); plt.scatter(self.sq_size / 2, self.sq_size / 2, marker='X', linewidths = 12)
+            # plt.subplot(236); plt.title("Old CODE"); plt.imshow(squared_mask); plt.scatter(self.sq_size / 2, self.sq_size / 2, marker='X', linewidths = 12)
+            # plt.show()
+            # breakpoint()
             # we remove the offset in the centered polygon to get it aligned
             xoffset = - (self.img.shape[1]-self.sq_size) / 2   # half of the distance from the square to the shape of the image!
             yoffset = - (self.img.shape[0]-self.sq_size) / 2
