@@ -44,7 +44,7 @@ def get_cm(mask):
 def get_polygon(binary_image):
     bin_img = binary_image.copy()
     bin_img = cv2.dilate(bin_img.astype(np.uint8), np.ones((2,2)), iterations=1)
-    contours, _ = cv2.findContours(bin_img.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(bin_img.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
     contour_points = contours[0]
     # should we remove 0.5 or it's just visualization?
     #shapely_points = [(point[0][0]-0.5, point[0][1]-0.5) for point in contour_points]  # Shapely expects points in the format (x, y)
@@ -52,7 +52,7 @@ def get_polygon(binary_image):
     if len(shapely_points) < 4:
         print('we have a problem, too few points', shapely_points)
         raise ValueError('\nWe have fewer than 4 points on the polygon, so we cannot create a Shapely polygon out of this points! Maybe something went wrong with the mask?')
-    polygon = shapely.Polygon(shapely_points)
+    polygon = shapely.Polygon(shapely_points).simplify(0, preserve_topology=True)
     return polygon
 ##############################
 ##############################
@@ -626,8 +626,9 @@ class PuzzleGenerator:
             'pieces': {},
             'adjacency': []
         } 
-        square_side = self.img.shape[0]
-        if square_side // 2 == 0:
+        verbosity = parameters.get('verbosity', 0)
+        square_side = self.img.shape[0] + parameters['monomino_square_size'] 
+        if square_side % 2 == 0:
             square_side += 1
         bg_mat = np.zeros_like(self.img)
         h_max = 0
@@ -649,12 +650,18 @@ class PuzzleGenerator:
             else:
                 image_i = np.where(mask_i, self.img, bg_mat)
             poly_i = get_polygon(mask_i)
-            cm_i = np.asarray(self.pieces_centers[f"{i}"][::-1]) + 1
+            cm_i = np.asarray(self.pieces_centers[f"{i}"][::-1])
             coords = np.argwhere(mask_i)
-            y0, x0 = coords.min(axis=0)
-            y1, x1 = coords.max(axis=0) + 1
+            y0, x0 = coords.min(axis=0) 
+            y1, x1 = coords.max(axis=0)#  + 1
             h_i = y1-y0 
             w_i = x1-x0 
+            # print(f"width: {w_i}, height: {h_i}")
+            # plt.imshow(image_i);
+            # plt.scatter(cm_i[1], cm_i[0])
+            # plt.plot([x0, x1], [y0, y1]), plt.plot([x1, x0], [y0, y1])
+            # plt.show()
+            # breakpoint()
             
             dists_from_cm = np.linalg.norm(np.array(cm_i[::-1]) - np.array(poly_i.exterior.coords[:]), axis=1)
             if np.max(dists_from_cm) > dist_cm_max:
@@ -667,16 +674,33 @@ class PuzzleGenerator:
             ## 2. Centering based on the center of mass
             centered_img = np.zeros((square_side, square_side, 3))
             centered_mask = np.zeros((square_side, square_side))
-            center_i = np.asarray([self.img.shape[0] / 2, self.img.shape[1] / 2])
+            # center_i is the center of centered_img! (not the center of image_i!?)
+            # center_i = np.asarray([self.img.shape[0] / 2, self.img.shape[1] / 2])
+            center_i = np.asarray([(centered_img.shape[1]) / 2, (centered_img.shape[1]) / 2]) # + 1
             shift2center = (center_i - cm_i)#[::1]
-            # print(f"{i}:{shift2center}")
-            x0c = np.round(x0+shift2center[1]).astype(int)
-            x1c = np.round(x0c + w_i).astype(int)
-            y0c = np.round(y0+shift2center[0]).astype(int)
-            y1c = np.round(y0c + h_i).astype(int)
-            centered_img[y0c:y1c, x0c:x1c] = image_i[y0:y1, x0:x1]
-            centered_mask[y0c:y1c, x0c:x1c] = mask_i[y0:y1, x0:x1]
+            # print(f"s2c_{i}:{shift2center}, cm_{i}: {cm_i}, w_{i}:{w_i}, h_{i}:{h_i}")
+            x0c = np.floor(x0+shift2center[1]+0.5).astype(int) 
+            x1c = np.floor(x0c + w_i + 1+0.5).astype(int) 
+            y0c = np.floor(y0+shift2center[0]+0.5).astype(int) 
+            y1c = np.floor(y0c + h_i + 1+0.5).astype(int)
+            ## NEW: calculate x0c and x1c from the center!
+            # x0c = np.ceil(center_i[1] - (w_i / 2)).astype(int) 
+            # x1c = np.ceil(center_i[1] + (w_i / 2)).astype(int) 
+            # y0c = np.ceil(center_i[0] - (h_i / 2)).astype(int) 
+            # y1c = np.ceil(center_i[0] + (h_i / 2)).astype(int)
+            if verbosity > 3:
+                print(f"Will extract image_i[{y0}:{y1}, {x0}:{x1}] with shape: {image_i[y0:y1+1, x0:x1+1].shape}")
+                print(f"Will paste in image_i[{y0c}:{y1c}, {x0c}:{x1c}] (center in {center_i}, shape: {centered_img[y0c:y1c, x0c:x1c].shape})")
+            centered_img[y0c:y1c, x0c:x1c] = image_i[y0:y1+1, x0:x1+1]
+            centered_mask[y0c:y1c, x0c:x1c] = mask_i[y0:y1+1, x0:x1+1]
             centered_poly = get_polygon(centered_mask)
+            centered_poly = shapely.affinity.translate(centered_poly, xoff=0, yoff=0)
+            # plt.subplot(121); plt.imshow(image_i)
+            # plt.plot(*poly_i.boundary.xy, c='red')
+            # plt.subplot(122); plt.imshow(centered_img)
+            # plt.plot(*centered_poly.boundary.xy, c='red')
+            # plt.show()
+            # breakpoint()
             ## 3. pieces in the dict
             self.pieces[piece_name] = {
                 'mask': mask_i,
@@ -688,7 +712,11 @@ class PuzzleGenerator:
                 'center_of_mass': cm_i,
                 'height': h_i,
                 'width': w_i,
-                'shift2center': shift2center
+                'shift2center': shift2center,
+                'x0c': x0c,
+                'x1c': x1c,
+                'y0c': y0c,
+                'y1c': y1c
             }
             self.gt['pieces'][j] = {
                 'name': piece_name,
@@ -702,37 +730,57 @@ class PuzzleGenerator:
         # it should always be dist_cm_max which is the maximum radius from the center of mass 
         # and is the radius of the circle where the piece can be included. Using this as the 
         # size of the image guarantees that the piece does not go out of the square even during rotation
-        if self.sq_size % 2 > 0:
-            self.sq_size += 1 # keep square size even! :)
-        hsq = self.sq_size // 2
+        # if self.sq_size % 2 > 0:
+        #     self.sq_size += 1 # keep square size even! :)
+        if self.sq_size % 2 == 0:
+            self.sq_size += 1 # keep square size odd! :)
+        hsq = self.sq_size / 2
+        # breakpoint()
         # remember center ordering!
-        from_idx = np.round(center_i-hsq).astype(int)
-        to_idx = np.round(center_i+hsq).astype(int)
+        # center_of_piece = np.asarray([center_i-w_i/2, center_i-h_i/2])
+
+        # this is the part of the centered_image that goes into the squared image (complete square)
+        from_idx = np.floor(center_i-hsq).astype(int)
+        to_idx = np.floor(center_i+hsq).astype(int)
+        if verbosity > 3:
+            print(f"from {from_idx} (rounded {center_i-hsq}) to {to_idx} (rounded {center_i+hsq})")
+
         for j, p_name in enumerate(self.pieces.keys()):
+            if verbosity > 3:
+                print(f"\npiece {p_name}")
             squared_img = np.zeros((self.sq_size, self.sq_size, 4))
-            squared_img2 = np.zeros((self.sq_size, self.sq_size, 4))
+            w_j = self.pieces[p_name]['width']
+            h_j = self.pieces[p_name]['height']
+            if verbosity > 3:
+                print(f"ci: {center_i}, w: {w_j}, h: {h_j}")
+            center_of_rotation = np.asarray([self.pieces[p_name]['center_of_mass'][1] + self.pieces[p_name]['shift2center'][1], \
+                self.pieces[p_name]['center_of_mass'][0] + self.pieces[p_name]['shift2center'][0]])
             # fill only the central part 
+            x0c = self.pieces[p_name]['x0c']
+            x1c = self.pieces[p_name]['x1c']
+            y0c = self.pieces[p_name]['y0c']
+            y1c = self.pieces[p_name]['y1c']
+
             try:
-                squared_img[:,:,:3] = self.pieces[p_name]['centered_image'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1], ::-1]
+                if verbosity > 3:
+                    print(f"taking centered_image[{from_idx[1]}:{to_idx[1]}, {from_idx[0]}:{to_idx[0]}] with shape ({self.pieces[p_name]['centered_image'][from_idx[1]:to_idx[1], from_idx[0]:to_idx[0], ::-1].shape})")
+                    print(f"into squared_image with shape ({squared_img[:, :, :3].shape})")
+                squared_img[:, :, :3] = self.pieces[p_name]['centered_image'][from_idx[1]:to_idx[1], from_idx[0]:to_idx[0], ::-1]
                 squared_img[:,:,3] = np.sum(squared_img[:,:,:3], axis=2) > 0
                 squared_mask = self.pieces[p_name]['centered_mask'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1]]
             except:
                 row_start2 = (self.sq_size - square_side) // 2
                 col_start2 = (self.sq_size - square_side) // 2
+                if verbosity > 3:
+                    print(f"taking centered_image of size {self.pieces[p_name]['centered_image'].shape}")
+                    print(f"into squared_image[{row_start2}:{row_start2+square_side}, {col_start2}:{col_start2 + square_side}] with shape ({square_side}, {square_side}) ")
                 squared_img[row_start2:row_start2 + square_side, col_start2:col_start2 + square_side, :3] = self.pieces[p_name]['centered_image']
                 squared_img[:,:,3] = np.sum(squared_img[:,:,:3], axis=2) > 0
-                squared_mask = squared_img2[:,:,3] #self.pieces[p_name]['centered_mask'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1]]
-            # plt.subplot(231); plt.title("centered"); plt.imshow(self.pieces[p_name]['centered_image']); plt.scatter(square_side / 2, square_side / 2, marker='X', linewidths=5)
-            # plt.subplot(232); plt.title("centered"); plt.imshow(self.pieces[p_name]['centered_mask']); plt.scatter(square_side / 2, square_side / 2, marker='X', linewidths=5)
-            # plt.subplot(233); plt.title("New CODE"); plt.imshow(squared_img2); plt.scatter(square_side / 2, square_side / 2, marker='X', linewidths=5)
-            # plt.subplot(234); plt.title("New CODE"); plt.imshow(squared_mask2); plt.scatter(square_side / 2, square_side / 2, marker='X', linewidths=5)
-            # plt.subplot(235); plt.title("Old CODE"); plt.imshow(squared_img); plt.scatter(self.sq_size / 2, self.sq_size / 2, marker='X', linewidths = 12)
-            # plt.subplot(236); plt.title("Old CODE"); plt.imshow(squared_mask); plt.scatter(self.sq_size / 2, self.sq_size / 2, marker='X', linewidths = 12)
-            # plt.show()
-            # breakpoint()
+                squared_mask = squared_img[:,:,3] #self.pieces[p_name]['centered_mask'][from_idx[0]:to_idx[0], from_idx[1]:to_idx[1]]
+            
             # we remove the offset in the centered polygon to get it aligned
-            xoffset = - (self.img.shape[1]-self.sq_size) / 2   # half of the distance from the square to the shape of the image!
-            yoffset = - (self.img.shape[0]-self.sq_size) / 2
+            xoffset = - (self.img.shape[1]-self.sq_size) / 2 - parameters['monomino_square_size'] / 2  # half of the distance from the square to the shape of the image!
+            yoffset = - (self.img.shape[0]-self.sq_size) / 2 - parameters['monomino_square_size'] / 2 
             squared_poly = shapely.affinity.translate(self.pieces[p_name]['centered_polygon'], xoff=xoffset, yoff=yoffset)
             if self.rotation_type > 1:
                 if self.rotation_type == 2: # 90 deg rotation
@@ -743,30 +791,124 @@ class PuzzleGenerator:
                     print("unknown rotation type!")
                     raise NotImplementedError()          
                 self.gt['pieces'][j]['theta'] = degrees
-                squared_img, squared_mask, squared_poly = self.rotate_piece(squared_img, squared_mask, squared_poly, degrees, method='ND')
+
+                ################################################
+                #   DEBUG VISUALIZATION
+                ################################################
+                # plt.subplot(3, 2, 1); plt.title("Image"); plt.imshow(squared_img);  plt.plot(*squared_poly.boundary.xy)
+                # plt.subplot(3, 2, 2); plt.title("Mask"); plt.imshow(squared_mask); plt.plot(*squared_poly.boundary.xy)
+                
+                ################################################################################################################################################
+                #   NOTE: this should not be done like this!
+                #   why do we rotate `squared_img[2:, 2:]` ? 
+                #       cannot explain, really. There is an issue with the center "value" (we have odd size images guaranteed, so floating value)
+                #       which never aligns with any rotation method, and empirically I found out that this gentle nudge (+2) before rotation is needed for the 
+                #       correct rotation. It seems simple (just move the "center" + 1!) but after losing a lot of time trying to find an explainable solution, 
+                #       I gave up. If you find the solution and can explain, please fix the code and reach out, I will be grateful.
+                #       The debug visualization parts are here to help "visualize" the issue if needed.
+                #   also, I think now polygons are screwed up (of course, because of this push), and to correct, there should be an offset (dependent on the 
+                #   angle). But they are not used, so we probably leave here this bomb ready to explode
+                ################################################################################################################################################
+                _squared_img_rotated, _squared_mask_rotated, squared_poly_rotated = self.rotate_piece(squared_img[2:, 2:, :], squared_mask[2:, 2:], squared_poly, degrees, method='CV')
+                _squared_img = np.zeros_like(squared_img)
+                _squared_img[2:, 2:, :] = _squared_img_rotated
+                _squared_mask = np.zeros_like(squared_mask)
+                _squared_mask[2:, 2:] = _squared_mask_rotated
+
+                ################################################
+                #   DEBUG VISUALIZATION
+                ################################################
+                # plt.subplot(3, 2, 3); plt.title("Image"); plt.imshow(_squared_img);  plt.plot(*squared_poly_rotated.boundary.xy)
+                # plt.subplot(3, 2, 4); plt.title("Mask"); plt.imshow(_squared_mask); plt.plot(*squared_poly_rotated.boundary.xy)
+                # plt.subplot(3, 2, 5); plt.title("Image Overlap"); plt.imshow(squared_img + _squared_img)
+                # plt.subplot(3, 2, 6); plt.title("Mask Overlap"); plt.imshow(squared_mask + _squared_mask)
+                # plt.show()
+                # breakpoint()
+
+                squared_img = _squared_img
+                squared_mask = _squared_mask
+
+                ################################################
+                # This code rotates the "centered" image as well
+                # centered_rotated_img2c, squared_mask2, centered_rotated_poly2 = self.rotate_piece(self.pieces[p_name]['centered_image'][2:, 2:, :], squared_mask, self.pieces[p_name]['centered_polygon'], degrees, center_of_rotation=center_of_rotation, method='CV')
+                # centered_rotated_img2 = np.zeros_like(self.pieces[p_name]['centered_image'])
+                # centered_rotated_img2[2:, 2:, :] = centered_rotated_img2c
+
+            ################################################
+            #   DEBUG VISUALIZATION
+            ################################################
+            # plt.suptitle(f"after rotation of {degrees} degrees")
+            # # CENTERED
+            # c_img = self.pieces[p_name]['centered_image'].copy()
+            # c_img[np.floor(c_img.shape[0]/2 + 0.5).astype(int), :, :] = np.asarray([255, 0, 0])
+            # plt.subplot(251); plt.title("centered"); plt.imshow(c_img); plt.scatter(square_side / 2, square_side / 2, marker='x', linewidths=120); plt.plot(*self.pieces[p_name]['centered_polygon'].boundary.xy); plt.scatter(cm_i[0] + shift2center[0], cm_i[1] + shift2center[1], marker='x', c='green', linewidths=60)
+            # plt.plot([x0c, x1c], [y0c, y1c]), plt.plot([x1c, x0c], [y0c, y1c])
+            # c_img = centered_rotated_img2.copy()
+            # c_img[np.floor(c_img.shape[0]/2 + 0.5).astype(int), :, :] = np.asarray([255, 0, 0])
+            # plt.subplot(252); plt.title("centered after rotation CV [1 --> 1]"); plt.imshow(c_img); plt.scatter(square_side / 2, square_side / 2, marker='x', linewidths=120); plt.plot(*centered_rotated_poly2.boundary.xy); plt.scatter(cm_i[0] + shift2center[0], cm_i[1] + shift2center[1], marker='x', c='green', linewidths=60)
+            # plt.plot([x0c, x1c], [y0c, y1c]), plt.plot([x1c, x0c], [y0c, y1c])
+            # c_img = centered_rotated_img3.copy()
+            # c_img[np.floor(c_img.shape[0]/2 + 0.5).astype(int), :, :] = np.asarray([255, 0, 0])
+            # plt.subplot(253); plt.title("centered after rotation CV [2 --> 2]"); plt.imshow(c_img); plt.scatter(square_side / 2, square_side / 2, marker='x', linewidths=120); plt.plot(*centered_rotated_poly3.boundary.xy); plt.scatter(cm_i[0] + shift2center[0], cm_i[1] + shift2center[1], marker='x', c='green', linewidths=60)
+            # plt.plot([x0c, x1c], [y0c, y1c]), plt.plot([x1c, x0c], [y0c, y1c])
+            # # SQUARED
+            # s_img = squared_img.copy()
+            # s_img[np.floor(s_img.shape[0]/2 + 0.5).astype(int), :, :] = np.asarray([255, 0, 0, 1])
+            # plt.subplot(256); plt.title("squared before rotation"); plt.imshow(s_img); plt.scatter(self.sq_size / 2, self.sq_size / 2, marker='x', linewidths=120); plt.plot(*squared_poly.boundary.xy)
+            # plt.subplot(257); plt.title("squared after rotation ND"); plt.imshow(squared_img2); plt.scatter(self.sq_size / 2, self.sq_size / 2, marker='x', linewidths=120); plt.plot(*squared_poly2.boundary.xy)
+            # s_img = squared_img3.copy()
+            # s_img[np.floor(s_img.shape[0]/2 + 0.5).astype(int), :, :] = np.asarray([255, 0, 0, 1])
+            # plt.subplot(258); plt.title("squared after rotation CV"); plt.imshow(s_img); plt.scatter(self.sq_size / 2, self.sq_size / 2, marker='x', linewidths=120); plt.plot(*squared_poly3.boundary.xy)
+            # # OVERLAP 
+            # plt.subplot(254); plt.title("overlap centered img centered ND"); plt.imshow(self.pieces[p_name]['centered_image'] + centered_rotated_img2); plt.scatter(square_side / 2, square_side / 2, marker='x', linewidths = 120)
+            # # plt.subplot(336); plt.title("overlap mask"); plt.imshow(squared_mask + squared_mask2); plt.scatter(self.sq_size / 2, self.sq_size / 2, marker='x', linewidths = 120)
+            # plt.subplot(255); plt.title("overlap centered img centered CV"); plt.imshow(self.pieces[p_name]['centered_image'] + centered_rotated_img3); plt.scatter(self.sq_size / 2, self.sq_size / 2, marker='x', linewidths = 120)
+            # plt.subplot(259); plt.title("overlap squared img rotated ND"); plt.imshow(squared_img + squared_img2); plt.scatter(self.sq_size / 2, self.sq_size / 2, marker='x', linewidths = 120)
+            # plt.subplot(2,5,10); plt.title("overlap squared img rotated CV"); plt.imshow(squared_img + squared_img3); plt.scatter(self.sq_size / 2, self.sq_size / 2, marker='x', linewidths = 120)
+            # plt.show()
+            # breakpoint()
 
             self.pieces[p_name]['squared_image'] = squared_img
             self.pieces[p_name]['squared_mask'] = squared_mask
-            self.pieces[p_name]['squared_polygon'] = squared_poly
-            self.pieces[p_name]['shift2square'] = np.asarray([xoffset, yoffset])
+            self.pieces[p_name]['squared_polygon'] = squared_poly                   # not sure if this is "always" aligned :/
+            self.pieces[p_name]['shift2square'] = np.asarray([xoffset, yoffset])    # suspicious (it is only for the polygon?)
 
         return self.pieces, self.sq_size, self.gt
 
-    def rotate_piece(self, squared_img, squared_mask, squared_poly, degrees, method='ND'):
+    def rotate_piece(self, squared_img, squared_mask, squared_poly, degrees, center_of_rotation=None, method='ND'):
         """ Rotate a piece, including the mask and the polygon """
         rot_origin = [squared_img.shape[0] // 2, squared_img.shape[1] // 2]
 
         if method == 'ND' or method == 'scipy':
             rotated_square_img = ndimage.rotate(squared_img, degrees, reshape=False, mode='constant')
             rotated_square_mask = ndimage.rotate(squared_mask, degrees, reshape=False, mode='constant')
-        elif method == 'OPENCV' or method == 'WARP':
+        elif method == 'OPENCV-WARP' or method == 'WARP':
             # region_rot = ndimage.rotate(region_pad, degree, reshape=False, cval=bg_color)
-            rotation_mat = cv2.getRotationMatrix2D((squared_img.shape[1]/2, squared_img.shape[0]/2), degrees, 1)
-            rotated_square_img = cv2.warpAffine(squared_img, rotation_mat, rot_origin,
-                borderMode=cv2.BORDER_CONSTANT, borderValue=0)
-            rotated_square_mask = cv2.warpAffine(squared_mask, rotation_mat, rot_origin,
-                borderMode=cv2.BORDER_CONSTANT, borderValue=0)
-        rotated_square_poly = shapely.affinity.rotate(squared_poly, -degrees, origin=rot_origin)
+            if center_of_rotation is None:
+                center_of_rotation = (np.array(squared_img.shape[:2])) / 2.0  # match scipy's center convention
+            rotation_mat = cv2.getRotationMatrix2D(center_of_rotation, degrees, 1)
+            rotated_square_img = cv2.warpAffine(squared_img, rotation_mat, (squared_img.shape[1], squared_img.shape[0]),  # keep original size
+                            flags=cv2.INTER_LINEAR,
+                            borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+            rotated_square_mask = cv2.warpAffine(squared_mask, rotation_mat, (squared_img.shape[1], squared_img.shape[0]),  # keep original size
+                            flags=cv2.INTER_LINEAR,
+                            borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+        elif method == 'CV' or method == 'OPENCV-ROTATE':
+            if degrees == 0 or degrees == 360:
+                rotated_square_img, rotated_square_mask = squared_img, squared_mask
+            elif degrees == 90:
+                rotated_square_img = cv2.rotate(squared_img, cv2.ROTATE_90_COUNTERCLOCKWISE) 
+                rotated_square_mask = cv2.rotate(squared_mask, cv2.ROTATE_90_COUNTERCLOCKWISE) 
+            elif degrees == 180:
+                rotated_square_img = cv2.rotate(squared_img, cv2.ROTATE_180) 
+                rotated_square_mask = cv2.rotate(squared_mask, cv2.ROTATE_180)  
+            elif degrees == 270:
+                rotated_square_img = cv2.rotate(squared_img, cv2.ROTATE_90_CLOCKWISE) 
+                rotated_square_mask = cv2.rotate(squared_mask, cv2.ROTATE_90_CLOCKWISE) 
+            else:
+                print(f"ERROR: this method handles only 90deg rotations! (and degrees={degrees})\nChoose 'WARP' or 'scipy' for other rotations.")
+
+        rotated_square_poly = shapely.affinity.rotate(squared_poly, -degrees, origin=rot_origin) #(np.asarray(rot_origin)-0.5).tolist())
         return rotated_square_img, rotated_square_mask, rotated_square_poly
         # plt.subplot(131); plt.imshow(squared_img); plt.title(f'will be rotated by {degree} degrees!')
         # plt.subplot(132); plt.imshow(rotated_square_img_nd); plt.title('Rotated with SCIPY NDIMAGE')
