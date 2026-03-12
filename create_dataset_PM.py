@@ -45,7 +45,8 @@ def main(cfg):
             print(f"Skipping {puzzle_name} as configured!")
         else:
             print(f"Creating puzzle from {input_image} and {pattern_map}\n\t --> {puzzle_name}\n")    
-            puzzle = Puzzle(input_path=full_path_image, puzzle_name=puzzle_name, puzzle_type=puzzle_type, output_path=cfg['output'], input_type='image', target_size=target_size)
+            puzzle = Puzzle(input_path=full_path_image, puzzle_name=puzzle_name, puzzle_type=puzzle_type, output_path=cfg['output'], input_type='image', target_size=target_size,
+                            save_masks=cfg['save_masks'], save_polygons=cfg['save_polygons'])
             puzzle.prepare_puzzle(num_pieces = 0, crop_pieces = True, pattern_map_path = full_path_pattern_map, monomino_square_size = monomino_square_size)
             puzzle.save()
             # breakpoint()
