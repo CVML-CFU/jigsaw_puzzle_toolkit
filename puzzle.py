@@ -179,7 +179,8 @@ def extract_polygon(binary_mask: np.ndarray, return_vals: bool = False):
 class Puzzle:
 
     def __init__(self, input_path: str, puzzle_type: PuzzleType, output_path: str, input_type: str, padding: int = 1000, \
-        target_size: tuple[int, int] = (0, 0), puzzle_name: str = None, output_folder_name:str = None, curves_type:str = "smooth"):    
+        target_size: tuple[int, int] = (0, 0), puzzle_name: str = None, output_folder_name:str = None, curves_type:str = "smooth", \
+        save_masks: bool = True, save_polygons: bool = False):    
 
         self.input_type = input_type
         if self.input_type == 'repair' or self.input_type == 'json':
@@ -226,6 +227,9 @@ class Puzzle:
         # - smooth: creates puzzle with smooth curves (S-like)
         # - segment: creates puzzle with segmented line (W-like)
         self.curves_type = curves_type
+        # saving
+        self.save_masks = save_masks
+        self.save_polygons = save_polygons
 
     def prepare_puzzle(self, num_pieces: int = 9, crop_pieces: bool = True, pattern_map_path: str = None, monomino_square_size: int = None):
         if self.input_type == 'repair' or self.input_type == 'json':
@@ -504,8 +508,8 @@ class Puzzle:
                 self.positions.append(fragment['pixel_position'])
 
             self.puzzle_info['pieces_image_size'] = self.images[0].shape
-            self.puzzle_info['binary_masks_available'] = True
-            self.puzzle_info['polygons_available'] = True
+            self.puzzle_info['binary_masks_available'] = self.save_masks
+            self.puzzle_info['polygons_available'] = self.save_polygons
             self.puzzle_info['ground_truth_available'] = True
             self.puzzle_info['max_dist_from_center'] = np.ceil(self.max_enclosing_radius).astype(float)
             self.puzzle_info['padding'] = self.padding
@@ -695,25 +699,31 @@ class Puzzle:
         print("saving..")
         images_out_dir = os.path.join(self.output_dir, 'images')
         os.makedirs(images_out_dir, exist_ok=True)
-        bmasks_out_dir = os.path.join(self.output_dir, 'binary_masks')
-        os.makedirs(bmasks_out_dir, exist_ok=True)        
-        polygons_out_dir = os.path.join(self.output_dir, 'polygons')
-        os.makedirs(polygons_out_dir, exist_ok=True)
+        if self.save_masks:
+            bmasks_out_dir = os.path.join(self.output_dir, 'binary_masks')
+            os.makedirs(bmasks_out_dir, exist_ok=True)        
+        if self.save_polygons:
+            polygons_out_dir = os.path.join(self.output_dir, 'polygons')
+            os.makedirs(polygons_out_dir, exist_ok=True)
         if self.input_type == 'repair' or self.input_type == 'json':
             for frag_key in self.input_data.keys():
                 frag_data = self.input_data[frag_key]
 
                 # for name, image, bmask, polygon in zip(self.names, self.images, self.masks, self.polygons):
                 plt.imsave(os.path.join(images_out_dir, f"{frag_data['idx']}_{frag_data['name']}.png"), frag_data['image'])
-                cv2.imwrite(os.path.join(bmasks_out_dir, f"{frag_data['idx']}_{frag_data['name']}.png"), frag_data['mask'])
-                np.save(os.path.join(polygons_out_dir, f"{frag_data['idx']}_{frag_data['name'][:-4]}"), frag_data['polygon'])
+                if self.save_masks:
+                    cv2.imwrite(os.path.join(bmasks_out_dir, f"{frag_data['idx']}_{frag_data['name']}.png"), frag_data['mask'])
+                if self.save_polygons:
+                    np.save(os.path.join(polygons_out_dir, f"{frag_data['idx']}_{frag_data['name'][:-4]}"), frag_data['polygon'])
         else:
             for p_name in self.pieces.keys():
                 piece = self.pieces[p_name]
                 plt.imsave(os.path.join(images_out_dir, f"{p_name}.png"), np.clip(piece['squared_image'], 0, 1))
                 # cv2.imwrite(os.path.join(images_out_dir, f"piece_{j:04d}.png"), np.round(piece['centered_image']*255).astype(np.uint8))
-                cv2.imwrite(os.path.join(bmasks_out_dir, f"{p_name}.png"), piece['squared_mask'])
-                np.save(os.path.join(polygons_out_dir, f"{p_name}"), piece['squared_polygon'])
+                if self.save_masks:
+                    cv2.imwrite(os.path.join(bmasks_out_dir, f"{p_name}.png"), piece['squared_mask'])
+                if self.save_polygons:
+                    np.save(os.path.join(polygons_out_dir, f"{p_name}"), piece['squared_polygon'])
 
         with open(os.path.join(self.output_dir, "ground_truth.json"), 'w') as jf:
             json.dump(self.gt, jf, indent=2)
