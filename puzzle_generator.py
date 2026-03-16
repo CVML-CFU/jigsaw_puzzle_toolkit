@@ -627,7 +627,7 @@ class PuzzleGenerator:
             'adjacency': []
         } 
         verbosity = parameters.get('verbosity', 0)
-        square_side = self.img.shape[0] + parameters['monomino_square_size'] 
+        square_side = self.img.shape[0] + parameters['monomino_square_size'] + 10 # padding to be sure
         if square_side % 2 == 0:
             square_side += 1
         bg_mat = np.zeros_like(self.img)
@@ -691,7 +691,10 @@ class PuzzleGenerator:
             if verbosity > 3:
                 print(f"Will extract image_i[{y0}:{y1}, {x0}:{x1}] with shape: {image_i[y0:y1+1, x0:x1+1].shape}")
                 print(f"Will paste in image_i[{y0c}:{y1c}, {x0c}:{x1c}] (center in {center_i}, shape: {centered_img[y0c:y1c, x0c:x1c].shape})")
-            centered_img[y0c:y1c, x0c:x1c] = image_i[y0:y1+1, x0:x1+1]
+            try:
+                centered_img[y0c:y1c, x0c:x1c] = image_i[y0:y1+1, x0:x1+1]
+            except:
+                breakpoint()
             centered_mask[y0c:y1c, x0c:x1c] = mask_i[y0:y1+1, x0:x1+1]
             centered_poly = get_polygon(centered_mask)
             centered_poly = shapely.affinity.translate(centered_poly, xoff=0, yoff=0)
@@ -793,7 +796,7 @@ class PuzzleGenerator:
                 self.gt['pieces'][j]['theta'] = degrees
 
                 ################################################
-                #   DEBUG VISUALIZATION
+                #   DEBUG VISUALIZATION 1 (continues below)
                 ################################################
                 # plt.subplot(3, 2, 1); plt.title("Image"); plt.imshow(squared_img);  plt.plot(*squared_poly.boundary.xy)
                 # plt.subplot(3, 2, 2); plt.title("Mask"); plt.imshow(squared_mask); plt.plot(*squared_poly.boundary.xy)
@@ -816,7 +819,7 @@ class PuzzleGenerator:
                 _squared_mask[2:, 2:] = _squared_mask_rotated
 
                 ################################################
-                #   DEBUG VISUALIZATION
+                #   DEBUG VISUALIZATION 1 (continuing)
                 ################################################
                 # plt.subplot(3, 2, 3); plt.title("Image"); plt.imshow(_squared_img);  plt.plot(*squared_poly_rotated.boundary.xy)
                 # plt.subplot(3, 2, 4); plt.title("Mask"); plt.imshow(_squared_mask); plt.plot(*squared_poly_rotated.boundary.xy)
@@ -835,7 +838,7 @@ class PuzzleGenerator:
                 # centered_rotated_img2[2:, 2:, :] = centered_rotated_img2c
 
             ################################################
-            #   DEBUG VISUALIZATION
+            #   DEBUG VISUALIZATION 2
             ################################################
             # plt.suptitle(f"after rotation of {degrees} degrees")
             # # CENTERED
