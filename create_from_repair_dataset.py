@@ -26,21 +26,26 @@ def main(args):
     
     puzzles = os.listdir(args.input_root)
     sorted_puzzles = natsort.natsorted(puzzles)
+    # breakpoint()
+    demo_puzzles = ['puzzle_0000016_RP_group_15', 'puzzle_0000030_RP_group_29', 'puzzle_0000119_RP_group_89']
     for puzzle_name in sorted_puzzles:
-        target_folder = os.path.join(args.output_root, puzzle_name)
-        if os.path.exists(target_folder):
-            print(f"puzzle {os.path.basename(target_folder)} already exists!")
-        else: 
-            print("creating puzzle", os.path.basename(puzzle_name))
-            puzzle_data_file = os.path.join(args.input_root, puzzle_name, 'data.json')
-            puzzle = Puzzle(puzzle_data_file, args.puzzle_type, args.output_root)
-            puzzle.load_input_data(crop_pieces=True, new_size=args.new_size)
-            puzzle.save()
-            # copy preview
-            shutil.copy2(os.path.join(args.input_root, puzzle_name, 'adjacency_preview.png'), os.path.join(puzzle.output_dir, 'adjacency_preview.png'))
-            shutil.copy2(os.path.join(args.input_root, puzzle_name, 'preview.png'), os.path.join(puzzle.output_dir, 'preview.png'))
-            # breakpoint()
-            print('done\n')
+        if any(demo_puz_name in puzzle_name for demo_puz_name in demo_puzzles):
+            target_folder = os.path.join(args.output_root, puzzle_name)
+            if os.path.exists(target_folder):
+                print(f"puzzle {os.path.basename(target_folder)} already exists!")
+            else: 
+                print("creating puzzle", os.path.basename(puzzle_name))
+                puzzle_data_file = os.path.join(args.input_root, puzzle_name, 'data.json')
+                puzzle = Puzzle(puzzle_data_file, args.puzzle_type, args.output_root)
+                puzzle.load_input_data(crop_pieces=True, new_size=args.new_size, add_random_rotations=True)
+                puzzle.save()
+                # copy preview
+                shutil.copy2(os.path.join(args.input_root, puzzle_name, 'adjacency_preview.png'), os.path.join(puzzle.output_dir, 'adjacency_preview.png'))
+                shutil.copy2(os.path.join(args.input_root, puzzle_name, 'preview.png'), os.path.join(puzzle.output_dir, 'preview.png'))
+                # breakpoint()
+                print('done\n')
+        else:
+            print("skip, not for the demo")
         
     return 1
 

@@ -1,0 +1,14 @@
+# DATASET 
+shuffle: True 
+seed: 42
+skip_done: True
+save_masks: True
+save_polygons: False
+# PATHS
+input: ~/path_to_input_folder
+pattern_maps_path:  ~/path_to_folder_with_polyominoes
+output:  ~/path_to_output_folder
+# PUZZLES 
+puzzle_type: P2           # P1 no rotation, P2 90 degrees rotation, P3 no guarantees what will happen (free rotation)
+monomino_square_size: 31  # choose accordingly
+puzzle_distribution: None # needed for I puzzles

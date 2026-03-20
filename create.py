@@ -17,36 +17,34 @@ Type 2R:
 """
 
 import os
-
 import argparse
 import shutil
 from puzzle import PuzzleType, Puzzle
 
 def main(args):
 
-    #root_path = ('/run/user/1000/gvfs/sftp:host=gpu1.dsi.unive.it,user=m.khoroshiltseva/home/ssd/datasets/RePAIR_v2/3_Rendered_2D/SOLVED/puzzle_0000025_RP_group_24')
-
-    root_path = args.input
-    input_path = os.path.join(root_path, 'data.json')
-    puzzle = Puzzle(input_path, args.puzzle_type, args.output)
-    #puzzle = Puzzle(args.input, args.puzzle_type, args.output)
-    puzzle.load_input_data(crop_pieces=True, new_size=args.new_size)
-    # puzzle.create_pieces()
+    puzzle = Puzzle(input_path=args.input, puzzle_type=args.puzzle_type, output_path=args.output, input_type=args.input_type, target_size=args.new_size)
+    puzzle.prepare_puzzle(num_pieces = args.num_pieces, crop_pieces = True, pattern_map_path = args.pattern_map)
     puzzle.save()
-    # copy preview
-    shutil.copy2(os.path.join(root_path, 'adjacency_preview.png'),
-                 os.path.join(puzzle.output_dir, 'adjacency_preview.png'))
-    shutil.copy2(os.path.join(root_path, 'preview.png'),
-                 os.path.join(puzzle.output_dir, 'preview.png'))
+    if args.input_type == 'repair' or args.input_type == 'json':
+        # copy preview
+        shutil.copy2(os.path.join(args.input, 'adjacency_preview.png'),
+                    os.path.join(puzzle.output_dir, 'adjacency_preview.png'))
+        shutil.copy2(os.path.join(args.input, 'preview.png'),
+                    os.path.join(puzzle.output_dir, 'preview.png'))
     return 1
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Create a puzzle')
     parser.add_argument('--input', '-I', type=str, default='input', help='path to an image or a set of fragments')
+    parser.add_argument('--input_type', '-IT', type=str, default='image') # 'image', 'repair', 'json'
+    parser.add_argument('--num_pieces', '-NP', type=int, default=9) # 'image', 'repair', 'json'
+    parser.add_argument('--pattern_map', '-M', type=str, default='') 
     parser.add_argument('--puzzle_type', '-PT', type=PuzzleType, choices=list(PuzzleType), help='puzzle type')
     parser.add_argument('--output', '-O', type=str, default='output', help='path to the output where the puzzle files will be placed')
-    parser.add_argument('--new_size', '-S', type=int, default=251, help='new size for rescaling')
+    parser.add_argument('--new_size', '-S', type=int, default=251, help='new size for rescaling the input image')
+    
 
     args = parser.parse_args()
     main(args)
